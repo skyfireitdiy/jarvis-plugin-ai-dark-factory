@@ -1,5 +1,6 @@
 ---
-name: ai-dark-factory
+id: ai-dark-factory
+name: AI Agent 黑灯工厂
 description: AI Agent 黑灯工厂——Specs 进，可工作的软件出。多 Agent 自主写码/测试/评估，人类审 pass/fail 报告。
 version: 0.1.0
 license: MIT
