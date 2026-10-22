@@ -46,3 +46,4 @@ htmlcov/
 
 # Jarvis 本地运行产物
 .jarviscache/
+.jarvis/
