@@ -855,7 +855,7 @@ export default {
       </div>
       <div v-if="guideVisible" style="margin-top:6px;">
         <!-- 闭环图：逆向分析 → 正向开发 → 知识回流 -->
-        <svg viewBox="0 0 360 150" width="100%" style="display:block;background:#0d1117;border:1px solid #30363d;border-radius:6px;">
+        <svg viewBox="0 0 376 150" width="100%" style="display:block;max-width:100%;height:auto;background:#0d1117;border:1px solid #30363d;border-radius:6px;">
           <!-- 三条主流程节点（明细文字内嵌节点，避免互相重叠） -->
           <rect x="8" y="18" width="104" height="60" rx="6" fill="#1f6feb" fill-opacity="0.18" stroke="#1f6feb" stroke-width="1"/>
           <text x="60" y="37" text-anchor="middle" font-size="10" fill="#79c0ff" font-weight="bold">① 逆向分析</text>
@@ -877,7 +877,7 @@ export default {
           <path d="M316 78 C 316 132, 60 132, 60 78" fill="none" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#dfArrowBack)"/>
 
           <!-- 底部说明（回流弧线下方） -->
-          <text x="180" y="142" text-anchor="middle" font-size="8.5" fill="#6e7681">Specs 进，可工作的软件出 · 人类审 pass/fail 报告 · 逆向→正向→回流闭环</text>
+          <text x="188" y="142" text-anchor="middle" font-size="8.5" fill="#6e7681">Specs 进，可工作的软件出 · 人类审 pass/fail 报告 · 逆向→正向→回流闭环</text>
 
           <defs>
             <marker id="dfArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
