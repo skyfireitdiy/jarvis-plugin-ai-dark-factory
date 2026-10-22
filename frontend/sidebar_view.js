@@ -343,6 +343,30 @@ export default {
         localStorage.removeItem(activeDirKey(this.nodeId));
       }
     },
+    // 用宿主目录选择弹窗挑选项目目录（返回路径+节点）。
+    // 选择后同步切换节点并直接加入项目列表，无需手输。
+    async pickProjectDir() {
+      const pick =
+        typeof window !== "undefined" && window.__jarvisPickDirectoryWithNode;
+      if (typeof pick !== "function") {
+        this.error = "宿主未提供目录选择通道，请手动填写项目目录路径";
+        return;
+      }
+      try {
+        const picked = await pick();
+        if (!picked || !picked.path) {
+          return;
+        }
+        // 目录选择带节点时，同步切换目标节点（该目录所在节点）
+        if (picked.nodeId) {
+          this.onNodeChange(picked.nodeId);
+        }
+        this.projectInput = picked.path;
+        this.addProject();
+      } catch (e) {
+        this.error = String((e && e.message) || e);
+      }
+    },
     // 添加项目目录（去重、最近使用在前、上限截断）
     addProject() {
       const dir = (this.projectInput || "").trim();
@@ -905,6 +929,8 @@ export default {
         <input v-model="projectInput" placeholder="输入项目目录（如 /path/to/legacy）"
           @keydown.enter.prevent="addProject"
           style="flex:1;min-width:0;padding:4px 6px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:12px;">
+        <button @click="pickProjectDir" title="用目录选择弹窗挑选项目目录"
+          style="padding:4px 10px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:12px;">选择目录</button>
         <button @click="addProject" :disabled="busy"
           style="padding:4px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">添加</button>
       </div>
