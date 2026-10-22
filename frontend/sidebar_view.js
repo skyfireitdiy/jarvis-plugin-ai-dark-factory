@@ -855,35 +855,34 @@ export default {
       </div>
       <div v-if="guideVisible" style="margin-top:6px;">
         <!-- 闭环图：逆向分析 → 正向开发 → 知识回流 -->
-        <svg viewBox="0 0 320 150" width="100%" style="display:block;background:#0d1117;border:1px solid #30363d;border-radius:6px;">
+        <svg viewBox="0 0 320 168" width="100%" style="display:block;background:#0d1117;border:1px solid #30363d;border-radius:6px;">
           <!-- 三条主流程节点 -->
-          <rect x="14" y="22" width="84" height="40" rx="6" fill="#1f6feb" fill-opacity="0.18" stroke="#1f6feb" stroke-width="1"/>
-          <text x="56" y="38" text-anchor="middle" font-size="10" fill="#79c0ff" font-weight="bold">① 逆向分析</text>
-          <text x="56" y="52" text-anchor="middle" font-size="8.5" fill="#8b949e">Reversa 5 阶段</text>
+          <rect x="14" y="18" width="84" height="40" rx="6" fill="#1f6feb" fill-opacity="0.18" stroke="#1f6feb" stroke-width="1"/>
+          <text x="56" y="34" text-anchor="middle" font-size="10" fill="#79c0ff" font-weight="bold">① 逆向分析</text>
+          <text x="56" y="48" text-anchor="middle" font-size="8.5" fill="#8b949e">Reversa 5 阶段</text>
 
-          <rect x="118" y="22" width="84" height="40" rx="6" fill="#238636" fill-opacity="0.18" stroke="#238636" stroke-width="1"/>
-          <text x="160" y="38" text-anchor="middle" font-size="10" fill="#3fb950" font-weight="bold">② 正向开发</text>
-          <text x="160" y="52" text-anchor="middle" font-size="8.5" fill="#8b949e">黑灯工厂 6 阶段</text>
+          <rect x="118" y="18" width="84" height="40" rx="6" fill="#238636" fill-opacity="0.18" stroke="#238636" stroke-width="1"/>
+          <text x="160" y="34" text-anchor="middle" font-size="10" fill="#3fb950" font-weight="bold">② 正向开发</text>
+          <text x="160" y="48" text-anchor="middle" font-size="8.5" fill="#8b949e">黑灯工厂 6 阶段</text>
 
-          <rect x="222" y="22" width="84" height="40" rx="6" fill="#9e6a03" fill-opacity="0.18" stroke="#9e6a03" stroke-width="1"/>
-          <text x="264" y="38" text-anchor="middle" font-size="10" fill="#d29922" font-weight="bold">③ 知识回流</text>
-          <text x="264" y="52" text-anchor="middle" font-size="8.5" fill="#8b949e">sync 同步维护</text>
+          <rect x="222" y="18" width="84" height="40" rx="6" fill="#9e6a03" fill-opacity="0.18" stroke="#9e6a03" stroke-width="1"/>
+          <text x="264" y="34" text-anchor="middle" font-size="10" fill="#d29922" font-weight="bold">③ 知识回流</text>
+          <text x="264" y="48" text-anchor="middle" font-size="8.5" fill="#8b949e">sync 同步维护</text>
 
           <!-- 主流程箭头 ①→②→③ -->
-          <path d="M98 42 H118" stroke="#8b949e" stroke-width="1.5" marker-end="url(#dfArrow)"/>
-          <path d="M202 42 H222" stroke="#8b949e" stroke-width="1.5" marker-end="url(#dfArrow)"/>
+          <path d="M98 38 H118" stroke="#8b949e" stroke-width="1.5" marker-end="url(#dfArrow)"/>
+          <path d="M202 38 H222" stroke="#8b949e" stroke-width="1.5" marker-end="url(#dfArrow)"/>
 
-          <!-- 回流箭头 ③→①（闭环） -->
-          <path d="M264 62 C 264 118, 56 118, 56 62" fill="none" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#dfArrowBack)"/>
+          <!-- 各阶段明细（节点下方、回流弧线之上） -->
+          <text x="56" y="76" text-anchor="middle" font-size="8" fill="#8b949e">侦察→挖掘→解读→生成→评审</text>
+          <text x="160" y="76" text-anchor="middle" font-size="8" fill="#8b949e">规划→隐藏场景→生成(TDD)→验证→回归→门禁</text>
+          <text x="264" y="76" text-anchor="middle" font-size="8" fill="#8b949e">基线→差异分析→增量更新→导出</text>
 
-          <!-- 各阶段明细 -->
-          <text x="56" y="92" text-anchor="middle" font-size="8" fill="#8b949e">侦察→挖掘→解读→生成→评审</text>
-          <text x="160" y="92" text-anchor="middle" font-size="8" fill="#8b949e">规划→隐藏场景→生成(TDD)→验证→回归→门禁</text>
-          <text x="264" y="92" text-anchor="middle" font-size="8" fill="#8b949e">基线→差异分析→增量更新→导出</text>
+          <!-- 回流箭头 ③→①（闭环，走底部大圆弧，避开文字） -->
+          <path d="M264 58 C 264 150, 56 150, 56 58" fill="none" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#dfArrowBack)"/>
 
-          <!-- 底部说明 -->
-          <text x="160" y="112" text-anchor="middle" font-size="8.5" fill="#6e7681">Specs 进，可工作的软件出 · 人类审 pass/fail 报告</text>
-          <text x="160" y="126" text-anchor="middle" font-size="8.5" fill="#6e7681">对遗留项目：先逆向出规格，再正向开发，最后回流保持文档同步</text>
+          <!-- 底部说明（回流弧线下方） -->
+          <text x="160" y="158" text-anchor="middle" font-size="8.5" fill="#6e7681">Specs 进，可工作的软件出 · 人类审 pass/fail 报告 · 逆向→正向→回流闭环</text>
 
           <defs>
             <marker id="dfArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
