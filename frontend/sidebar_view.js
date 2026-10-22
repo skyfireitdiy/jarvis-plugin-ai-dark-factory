@@ -1,0 +1,1090 @@
+// Reversa 插件前端侧边栏视图。
+// 约定：纯浏览器 ES module，用 window.Vue 渲染，导出 default 组件，不 import 'vue'。
+// 功能：在编辑器左侧管理 Reversa 逆向工程工作区：
+//   - 项目区：选择/添加项目目录（localStorage 按节点+项目持久化）、
+//             安装/卸载 Reversa 工作区、查看分析状态（3-5s 轮询）；
+//   - 分析控制：查看 5 阶段进度（reconhecimento→escavacao→interpretacao→geracao→revisao）；
+//   - 产物浏览：树形浏览 _reversa_sdd/、查看内容、按置信度导出为 Jarvis rule、
+//             转换已安装 SKILL.md 为 rule。
+// 认证：所有读写经宿主 window.__jarvisFetch（自动携带 jarvis 认证），
+//       通过插件功能代理端点 /api/plugins/<node>/function-call 调用插件私有功能层。
+// 设计（issue #328）：后端无状态，设置纯前端 localStorage（按节点+项目 key 隔离）；
+//       跨设备共享靠两台设备指向同一工作区目录。
+
+const PLUGIN = "reversa";
+// 每节点项目目录列表持久化 key 前缀：jarvis_reversa_dirs_<node>（JSON 数组）。
+const DIRS_KEY_PREFIX = "jarvis_reversa_dirs_";
+// 每节点当前激活项目目录持久化 key 前缀：jarvis_reversa_active_<node>。
+const ACTIVE_DIR_KEY_PREFIX = "jarvis_reversa_active_";
+// 每节点项目目录历史上限（最近使用在前，超出截断）。
+const DIRS_HISTORY_MAX = 10;
+// 轮询间隔（毫秒）：3-5s 轮询 state.json（决策 9）。
+const POLL_INTERVAL = 4000;
+// Reversa 5 阶段（state.json 的 pending/completed 字段值）
+const PHASES = [
+  "reconhecimento",
+  "escavacao",
+  "interpretacao",
+  "geracao",
+  "revisao",
+];
+const PHASE_LABELS = {
+  reconhecimento: "侦察",
+  escavacao: "挖掘",
+  interpretacao: "解读",
+  geracao: "生成",
+  revisao: "评审",
+};
+// 置信度标记
+const CONFIDENCE_CONFIRMED = "🟢CONFIRMED";
+const CONFIDENCE_INFERRED = "🟡INFERRED";
+const CONFIDENCE_GAP = "🔴GAP";
+
+// 按节点生成项目目录列表存储 key
+function dirsKey(nodeId) {
+  return DIRS_KEY_PREFIX + (String(nodeId || "master").trim() || "master");
+}
+// 按节点生成激活项目目录存储 key
+function activeDirKey(nodeId) {
+  return ACTIVE_DIR_KEY_PREFIX + (String(nodeId || "master").trim() || "master");
+}
+
+// 复刻 App.vue 的 gateway 地址解析（侧边栏组件无 props 注入，需自行解析）
+function parseGatewayAddress(address) {
+  address = (address || "").trim();
+  if (!address) return null;
+  if (address.includes("://")) {
+    try {
+      const url = new URL(address);
+      return {
+        protocol: url.protocol.replace(":", ""),
+        host: url.hostname,
+        port:
+          url.port ||
+          (url.protocol === "https:" || url.protocol === "wss:" ? "443" : "80"),
+        path: url.pathname,
+      };
+    } catch {
+      return null;
+    }
+  }
+  if (address.includes(":")) {
+    const parts = address.split(":");
+    if (parts.length === 2) {
+      return { protocol: null, host: parts[0], port: parts[1], path: "" };
+    }
+  }
+  return { protocol: null, host: address, port: "8000", path: "" };
+}
+// 获取当前页面的 HTTP 协议（与 App.vue getHttpProtocol 一致）
+function getHttpProtocol() {
+  return window.location.protocol === "https:" ? "https" : "http";
+}
+function gatewayBase() {
+  const parsed = parseGatewayAddress(
+    localStorage.getItem("jarvis_gateway_url") || "",
+  );
+  const host = (parsed && parsed.host) || "127.0.0.1";
+  const port = (parsed && parsed.port) || "8000";
+  const protocol =
+    parsed && parsed.protocol === "https" ? "https" : getHttpProtocol();
+  return `${protocol}://${host}:${port}`;
+}
+
+// 通过 gateway 插件功能代理端点调用插件私有功能
+// nodeId 指定目标节点（默认 master）：Reversa 生命周期与产物都在该节点本地执行
+async function callFunction(functionName, args, nodeId) {
+  const authedFetch =
+    (typeof window !== "undefined" && window.__jarvisFetch) || fetch;
+  const targetNodeId = String(nodeId || "master").trim() || "master";
+  const resp = await authedFetch(
+    `${gatewayBase()}/api/plugins/${encodeURIComponent(targetNodeId)}/function-call`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        plugin: PLUGIN,
+        function: functionName,
+        arguments: args || {},
+      }),
+    },
+  );
+  let result;
+  try {
+    result = await resp.json();
+  } catch (e) {
+    throw new Error("网关响应异常", { cause: e });
+  }
+  if (!result.success) {
+    const err = result.error || {};
+    throw new Error(err.message || err.code || "调用失败");
+  }
+  const payload = result.result || {};
+  if (payload.success === false) {
+    throw new Error(payload.error || "操作失败");
+  }
+  return payload;
+}
+
+// 取路径的最后一段作为显示名（兼容 / 与 \）
+function baseName(p) {
+  const s = String(p || "").replace(/[\\/]+$/, "");
+  const i = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+  return i >= 0 ? s.slice(i + 1) : s;
+}
+
+export default {
+  name: "ReversaSidebarView",
+  props: {
+    workingDir: { type: String, default: "" },
+  },
+  data() {
+    return {
+      // 节点与当前节点（master 恒在列）
+      nodes: [],
+      nodeId: "master",
+      // 项目目录列表与当前激活目录（localStorage 按节点持久化）
+      dirs: [],
+      projectDir: "",
+      projectInput: "",
+      // 状态
+      status: null,
+      loading: false,
+      busy: false,
+      error: "",
+      message: "",
+      // 产物浏览
+      artifacts: [],
+      artifactOpen: {}, // path -> bool（树展开状态）
+      selectedArtifact: null,
+      artifactContent: "",
+      artifactLoading: false,
+      // 导出
+      exportBusy: false,
+      includeGap: false,
+      // 依赖图
+      depsGraph: null, // {nodes: [{id,label,path}], edges: [{from,to}]}，from 依赖 to（箭头指向被依赖方）
+      depsLoading: false,
+      depInput: "",
+      depBusy: false,
+      // 知识回流（sync）
+      syncStatus: null, // {has_baseline, base_commit, head_commit, stale, changed_artifacts, ...}
+      syncBusy: false,
+      // 项目目录右键菜单
+      menuVisible: false,
+      menuStyle: {},
+      menuDir: "",
+      // 帮助弹层
+      helpVisible: false,
+    };
+  },
+  computed: {
+    // 当前激活项目目录（无则空）
+    activeProject() {
+      return this.projectDir;
+    },
+    // 是否已安装（status.installed）
+    installed() {
+      return !!(this.status && this.status.installed);
+    },
+    // 当前阶段索引（-1 表示未开始/未知）
+    currentPhaseIndex() {
+      if (!this.status || !Array.isArray(this.status.completed)) return -1;
+      let idx = -1;
+      PHASES.forEach((p, i) => {
+        if (this.status.completed.includes(p)) idx = i;
+      });
+      return idx;
+    },
+    // 阶段进度列表：[{key, label, state: done|current|todo}]
+    phaseList() {
+      const done = new Set(
+        (this.status && Array.isArray(this.status.completed)
+          ? this.status.completed
+          : []
+        ).map((p) => String(p)),
+      );
+      const cur = this.status && this.status.phase ? String(this.status.phase) : "";
+      return PHASES.map((p) => {
+        let state = "todo";
+        if (done.has(p)) state = "done";
+        else if (cur === p) state = "current";
+        return { key: p, label: PHASE_LABELS[p] || p, state };
+      });
+    },
+    // 依赖图节点坐标（网格布局）：nodes 带 x/y，edges 带 from/to 坐标
+    depsLayout() {
+      const g = this.depsGraph;
+      if (!g || !g.nodes.length) return null;
+      const NODE_W = 150;
+      const NODE_H = 34;
+      const GAP_X = 40;
+      const GAP_Y = 30;
+      const cols = Math.max(1, Math.ceil(Math.sqrt(g.nodes.length)));
+      const nodes = g.nodes.map((n, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        return {
+          ...n,
+          x: col * (NODE_W + GAP_X),
+          y: row * (NODE_H + GAP_Y),
+          w: NODE_W,
+          h: NODE_H,
+        };
+      });
+      const byPath = {};
+      nodes.forEach((n) => {
+        byPath[n.path] = n;
+      });
+      const edges = g.edges.map((e) => {
+        const from = byPath[e.from];
+        const to = byPath[e.to];
+        if (!from || !to) return null;
+        // 箭头从依赖方 from 指向被依赖方 to（指向被依赖的上游）
+        return {
+          from,
+          to,
+          x1: from.x + from.w,
+          y1: from.y + from.h / 2,
+          x2: to.x,
+          y2: to.y + to.h / 2,
+        };
+      }).filter(Boolean);
+      const width = cols * (NODE_W + GAP_X) - GAP_X + 20;
+      const rows = Math.ceil(g.nodes.length / cols);
+      const height = rows * (NODE_H + GAP_Y) - GAP_Y + 20;
+      return { nodes, edges, width, height };
+    },
+  },
+  mounted() {
+    this.initNodes();
+    this.restoreDirs();
+    // 订阅宿主 agent_changed 事件：切换 Agent 时同步刷新
+    const on = typeof window !== "undefined" && window.__jarvisOn;
+    if (typeof on === "function") {
+      this._offAgentChanged = on("agent_changed", () => {
+        this.refresh();
+      });
+    }
+    // 3-5s 轮询状态（决策 9）
+    this._pollTimer = setInterval(() => {
+      this.pollStatus();
+    }, POLL_INTERVAL);
+    // 点击别处 / 按 Esc 关闭右键菜单
+    this._onDocClick = () => this.closeDirMenu();
+    this._onDocKeydown = (e) => {
+      if (e.key === "Escape") this.closeDirMenu();
+    };
+    document.addEventListener("click", this._onDocClick);
+    document.addEventListener("keydown", this._onDocKeydown);
+    this.refresh();
+  },
+  beforeUnmount() {
+    if (typeof this._offAgentChanged === "function") this._offAgentChanged();
+    if (this._pollTimer) clearInterval(this._pollTimer);
+    document.removeEventListener("click", this._onDocClick);
+    document.removeEventListener("keydown", this._onDocKeydown);
+  },
+  watch: {
+    workingDir() {
+      this.refresh();
+    },
+  },
+  methods: {
+    // ---- 节点管理 ----
+    // 加载节点列表（__jarvisGetNodes，master 恒在列），并恢复上次选中的节点
+    initNodes() {
+      const getNodes =
+        typeof window !== "undefined" && window.__jarvisGetNodes;
+      if (typeof getNodes !== "function") {
+        this.nodes = [{ node_id: "master", status: "running" }];
+        return;
+      }
+      try {
+        const list = getNodes() || [];
+        const nodes = Array.isArray(list)
+          ? list.filter((n) => n && String(n.node_id || "").trim())
+          : [];
+        this.nodes = nodes.length ? nodes : [{ node_id: "master", status: "running" }];
+      } catch (e) {
+        this.nodes = [{ node_id: "master", status: "running" }];
+      }
+      const saved = (localStorage.getItem("jarvis_reversa_node") || "master").trim();
+      this.nodeId = saved || "master";
+      this.restoreDirs();
+    },
+    onNodeChange() {
+      localStorage.setItem("jarvis_reversa_node", this.nodeId);
+      this.restoreDirs();
+      this.refresh();
+    },
+    // ---- 项目目录（localStorage 按节点持久化）----
+    restoreDirs() {
+      const raw = localStorage.getItem(dirsKey(this.nodeId));
+      let dirs = [];
+      try {
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) dirs = parsed;
+      } catch (e) {
+        dirs = [];
+      }
+      this.dirs = dirs.filter((d) => d && String(d).trim());
+      const active = (localStorage.getItem(activeDirKey(this.nodeId)) || "").trim();
+      this.projectDir = active || "";
+      this.projectInput = this.projectDir;
+    },
+    persistDirs() {
+      localStorage.setItem(dirsKey(this.nodeId), JSON.stringify(this.dirs));
+      if (this.projectDir) {
+        localStorage.setItem(activeDirKey(this.nodeId), this.projectDir);
+      } else {
+        localStorage.removeItem(activeDirKey(this.nodeId));
+      }
+    },
+    // 添加项目目录（去重、最近使用在前、上限截断）
+    addProject() {
+      const dir = (this.projectInput || "").trim();
+      if (!dir) {
+        this.error = "请输入项目目录";
+        return;
+      }
+      this.dirs = [dir, ...this.dirs.filter((d) => d !== dir)].slice(
+        0,
+        DIRS_HISTORY_MAX,
+      );
+      this.projectDir = dir;
+      this.persistDirs();
+      this.error = "";
+      this.refresh();
+    },
+    selectProject(dir) {
+      this.projectDir = dir;
+      this.projectInput = dir;
+      this.persistDirs();
+      this.refresh();
+    },
+    removeProject(dir) {
+      this.dirs = this.dirs.filter((d) => d !== dir);
+      if (this.projectDir === dir) {
+        this.projectDir = "";
+        this.projectInput = "";
+        localStorage.removeItem(activeDirKey(this.nodeId));
+      }
+      this.persistDirs();
+      this.refresh();
+    },
+    // ---- 项目目录右键菜单 ----
+    // 在项目目录 chip 上右键：弹出「创建 Agent 执行规格逆向分析 / 在当前 Agent 中执行」菜单。
+    openDirMenu(dir, event) {
+      this.menuDir = dir;
+      const menuWidth = 220;
+      const menuHeight = 76;
+      let left = event.clientX;
+      let top = event.clientY;
+      // 不超出视口右下缘
+      if (left + menuWidth > window.innerWidth - 8) {
+        left = window.innerWidth - menuWidth - 8;
+      }
+      if (left < 8) left = 8;
+      if (top + menuHeight > window.innerHeight - 8) {
+        top = window.innerHeight - menuHeight - 8;
+      }
+      if (top < 8) top = 8;
+      this.menuStyle = { left: left + "px", top: top + "px" };
+      this.menuVisible = true;
+    },
+    closeDirMenu() {
+      this.menuVisible = false;
+      this.menuDir = "";
+    },
+    // 生成对指定项目执行 Reversa 规格逆向分析的任务描述。
+    // 由 Jarvis Agent 依据 .agents/skills 的 Reversa skills（SKILL.md）编排执行 5 阶段，
+    // 通过 reversa 工具做生命周期管理与产物导出。
+    // 若项目配置了上游依赖（deps.json），注入上游路径与 read_artifact 指引，
+    // 让 Agent 反构时可参考上游已生成的 _reversa_sdd/ 规格产物。
+    async buildAnalysisPrompt(dir) {
+      const lines = [
+        `请对项目目录 ${dir} 执行 Reversa 规格逆向分析。`,
+        "",
+        "遵循 Reversa 逆向工程规则（.agents/skills 下的 SKILL.md，可 load_rule 加载）执行 5 阶段分析：",
+        "1. 侦察（reconhecimento/Scout）：识别项目技术栈、模块划分与关键入口。",
+        "2. 挖掘（escavacao/Archaeologist）：深入源码提取领域概念、实体与关系。",
+        "3. 解读（interpretacao/Detective）：交叉验证推断，标注置信度（🟢CONFIRMED/🟡INFERRED/🔴GAP）。",
+        "4. 生成（geracao/Architect）：产出结构化规格文档到 _reversa_sdd/（inventory/domain/architecture/sdd）。",
+        "5. 评审（revisao/Writer）：复核规格完整性，补齐缺口。",
+        "",
+        "执行要求：",
+        "- 若项目尚未安装 Reversa 工作区，先用 reversa 工具（action=install, project_dir=该目录）安装。",
+        "- 用 reversa 工具（action=status）查看分析进度，action=artifacts/read_artifact 浏览产物。",
+        "- 分析完成后用 reversa 工具（action=export_rules）把产物按置信度导出为 Jarvis rule 知识库。",
+        "- 分析过程与结论请分阶段汇报，最终给出规格产物清单与置信度汇总。",
+      ];
+      // 注入上游依赖参考（决策：Agent 读结构化 deps.json，不依赖图）
+      try {
+        const payload = await callFunction("get_dependencies", { project_dir: dir }, this.nodeId);
+        const deps = (payload.data && payload.data.dependencies) || [];
+        if (deps.length) {
+          lines.push(
+            "",
+            "上游依赖参考：",
+            "该项目依赖以下上游仓库，分析接口/领域/架构时可参考上游已生成的 _reversa_sdd/ 规格产物：",
+          );
+          deps.forEach((d) => {
+            const name = d.name ? `（${d.name}）` : "";
+            lines.push(`- 上游：${d.path}${name}`);
+          });
+          lines.push(
+            "读取方式：用 reversa 工具 action=read_artifact, project_dir=<上游路径>, path=<产物相对路径>（如 architecture.md / sdd/domain.md）读取上游规格，作为接口/领域/架构定义的权威参考。",
+            "若上游尚未生成产物，则基于源码自行推断并在结论中标注。",
+          );
+        }
+      } catch (e) {
+        // 读取依赖失败不阻断任务描述生成
+      }
+      return lines.join("\n");
+    },
+    // 在当前活跃 Agent 中执行该项目的规格逆向分析
+    async handleInCurrentAgent(dir) {
+      this.closeDirMenu();
+      if (!dir) return;
+      const send =
+        typeof window !== "undefined" && window.__jarvisSendToActiveAgent;
+      if (typeof send !== "function") {
+        this.message = "宿主未提供发送通道，无法在当前 Agent 中执行";
+        return;
+      }
+      const prompt = await this.buildAnalysisPrompt(dir);
+      const res = send(prompt);
+      if (res && res.success) {
+        this.message = `已把 ${dir} 的逆向分析提示词发送给当前 Agent`;
+      } else {
+        this.message = "失败: " + ((res && res.error) || "发送失败");
+      }
+    },
+    // 创建新 Agent 执行该项目的规格逆向分析（预填弹窗，用户确认/编辑后创建）
+    async handleNewAgent(dir) {
+      this.closeDirMenu();
+      if (!dir) return;
+      const openModal =
+        typeof window !== "undefined" && window.__jarvisOpenCreateAgentModal;
+      const create =
+        typeof window !== "undefined" && window.__jarvisCreateAgentForTask;
+      if (typeof openModal !== "function" && typeof create !== "function") {
+        this.message = "宿主未提供创建通道，无法创建 Agent";
+        return;
+      }
+      this.busy = true;
+      this.message = `正在创建 Agent 对 ${dir} 执行规格逆向分析…`;
+      try {
+        const prefill = {
+          workingDir: dir,
+          task: await this.buildAnalysisPrompt(dir),
+          name: `Reversa 逆向分析`,
+          nodeId: this.nodeId,
+        };
+        if (typeof openModal === "function") {
+          const res = await openModal(prefill);
+          if (res && res.confirmed) {
+            this.message = `已创建 Agent 对 ${dir} 执行规格逆向分析`;
+          } else {
+            this.message = "已取消";
+          }
+        } else {
+          const res = await create(prefill);
+          if (res && res.success) {
+            this.message = `已创建 Agent 对 ${dir} 执行规格逆向分析`;
+          } else {
+            this.message = "失败: " + ((res && res.error) || "创建失败");
+          }
+        }
+      } catch (e) {
+        this.message = "失败: " + String((e && e.message) || e);
+      } finally {
+        this.busy = false;
+      }
+    },
+    // ---- 状态 ----
+    async refresh() {
+      this.loading = true;
+      this.error = "";
+      try {
+        if (this.projectDir) {
+          await this.loadStatus();
+          await this.loadArtifacts();
+          await this.loadSyncStatus();
+        } else {
+          this.status = null;
+          this.artifacts = [];
+          this.syncStatus = null;
+        }
+        await this.loadDepsGraph();
+      } catch (e) {
+        this.error = e.message || "刷新失败";
+        this.status = null;
+      } finally {
+        this.loading = false;
+      }
+    },
+    // 轮询：静默刷新状态（不打断用户操作）
+    async pollStatus() {
+      if (!this.projectDir || this.busy || this.loading) return;
+      try {
+        await this.loadStatus();
+      } catch (e) {
+        // 轮询失败静默（断线重连：下次轮询自动恢复）
+      }
+    },
+    async loadStatus() {
+      const payload = await callFunction("get_status", { project_dir: this.projectDir }, this.nodeId);
+      this.status = payload.data || {};
+    },
+    // ---- 安装/卸载 ----
+    async doInstall() {
+      if (!this.projectDir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
+      this.busy = true;
+      this.error = "";
+      this.message = "";
+      try {
+        const payload = await callFunction(
+          "install_project",
+          { project_dir: this.projectDir, engine: "codex" },
+          this.nodeId,
+        );
+        this.message = `安装成功：${payload.data.version}，${payload.data.agents} 个 skills`;
+        await this.loadStatus();
+        await this.loadArtifacts();
+      } catch (e) {
+        this.error = e.message || "安装失败";
+      } finally {
+        this.busy = false;
+      }
+    },
+    async doUninstall() {
+      if (!this.projectDir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
+      if (!window.confirm("确定卸载 Reversa 工作区？_reversa_sdd/ 产物会保留。")) {
+        return;
+      }
+      this.busy = true;
+      this.error = "";
+      this.message = "";
+      try {
+        const payload = await callFunction(
+          "uninstall_project",
+          { project_dir: this.projectDir, keep_output: true },
+          this.nodeId,
+        );
+        this.message = `卸载完成：移除 ${payload.data.removed} 个文件`;
+        await this.loadStatus();
+        await this.loadArtifacts();
+      } catch (e) {
+        this.error = e.message || "卸载失败";
+      } finally {
+        this.busy = false;
+      }
+    },
+    // ---- 产物浏览 ----
+    async loadArtifacts() {
+      const payload = await callFunction("list_artifacts", { project_dir: this.projectDir }, this.nodeId);
+      this.artifacts = (payload.data && payload.data.files) || [];
+    },
+    // 树形展开/收起
+    toggleDir(node) {
+      this.artifactOpen[node.path] = !this.artifactOpen[node.path];
+    },
+    isDirOpen(node) {
+      return !!this.artifactOpen[node.path];
+    },
+    async openArtifact(node) {
+      if (node.type !== "file") return;
+      this.artifactLoading = true;
+      this.error = "";
+      try {
+        const payload = await callFunction(
+          "read_artifact",
+          { project_dir: this.projectDir, path: node.path },
+          this.nodeId,
+        );
+        this.selectedArtifact = payload.data;
+        this.artifactContent = payload.data.content || "";
+      } catch (e) {
+        this.error = e.message || "读取产物失败";
+      } finally {
+        this.artifactLoading = false;
+      }
+    },
+    // 置信度徽标
+    confidenceBadge(content) {
+      if (!content) return "";
+      if (content.includes(CONFIDENCE_GAP)) return CONFIDENCE_GAP;
+      if (content.includes(CONFIDENCE_CONFIRMED)) return CONFIDENCE_CONFIRMED;
+      if (content.includes(CONFIDENCE_INFERRED)) return CONFIDENCE_INFERRED;
+      return "";
+    },
+    // ---- 导出 ----
+    async doExportRules() {
+      if (!this.projectDir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
+      this.exportBusy = true;
+      this.error = "";
+      this.message = "";
+      try {
+        const payload = await callFunction(
+          "export_rules",
+          {
+            project_dir: this.projectDir,
+            include_gap: this.includeGap,
+            include_unknown: true,
+          },
+          this.nodeId,
+        );
+        const d = payload.data || {};
+        this.message = `导出 ${d.exported ? d.exported.length : 0} 条 rule 到 ${d.rule_dir || ""}` +
+          (d.skipped && d.skipped.length ? `（跳过 ${d.skipped.length} 条）` : "");
+      } catch (e) {
+        this.error = e.message || "导出失败";
+      } finally {
+        this.exportBusy = false;
+      }
+    },
+    // ---- 依赖图 ----
+    // 聚合当前节点下所有项目目录的 deps.json，构建依赖图。
+    // 节点=仓库目录；边 from→to 表示 from 依赖 to（箭头指向被依赖的上游）。
+    async loadDepsGraph() {
+      this.depsLoading = true;
+      this.error = "";
+      try {
+        const paths = this.dirs.length ? this.dirs : (this.projectDir ? [this.projectDir] : []);
+        const depsByPath = {};
+        for (const p of paths) {
+          try {
+            const payload = await callFunction("get_dependencies", { project_dir: p }, this.nodeId);
+            depsByPath[p] = (payload.data && payload.data.dependencies) || [];
+          } catch (e) {
+            depsByPath[p] = [];
+          }
+        }
+        // 收集所有节点（项目目录 + 依赖的上游路径）
+        const nodePaths = new Set(paths);
+        Object.values(depsByPath).forEach((deps) => {
+          deps.forEach((d) => {
+            if (d && d.path) nodePaths.add(d.path);
+          });
+        });
+        const nodes = Array.from(nodePaths).map((p) => ({
+          path: p,
+          label: baseName(p),
+        }));
+        // 边：from=依赖方，to=被依赖方（箭头指向被依赖的上游）
+        const edges = [];
+        Object.keys(depsByPath).forEach((from) => {
+          depsByPath[from].forEach((d) => {
+            if (d && d.path && d.path !== from) {
+              edges.push({ from, to: d.path });
+            }
+          });
+        });
+        this.depsGraph = { nodes, edges };
+      } catch (e) {
+        this.error = e.message || "加载依赖图失败";
+      } finally {
+        this.depsLoading = false;
+      }
+    },
+    // 为当前激活项目添加一个上游依赖
+    async addDependency() {
+      const dep = (this.depInput || "").trim();
+      if (!this.projectDir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
+      if (!dep) {
+        this.error = "请输入上游依赖路径";
+        return;
+      }
+      this.depBusy = true;
+      this.error = "";
+      this.message = "";
+      try {
+        const payload = await callFunction("get_dependencies", { project_dir: this.projectDir }, this.nodeId);
+        const deps = (payload.data && payload.data.dependencies) || [];
+        if (deps.some((d) => d.path === dep)) {
+          this.message = "该依赖已存在";
+          this.depInput = "";
+          return;
+        }
+        deps.push({ path: dep });
+        await callFunction("set_dependencies", { project_dir: this.projectDir, dependencies: deps }, this.nodeId);
+        this.message = `已添加依赖：${dep}`;
+        this.depInput = "";
+        await this.loadDepsGraph();
+      } catch (e) {
+        this.error = e.message || "添加依赖失败";
+      } finally {
+        this.depBusy = false;
+      }
+    },
+    // 删除当前激活项目的一个上游依赖
+    async removeDependency(depPath) {
+      if (!this.projectDir) return;
+      this.depBusy = true;
+      this.error = "";
+      this.message = "";
+      try {
+        const payload = await callFunction("get_dependencies", { project_dir: this.projectDir }, this.nodeId);
+        const deps = ((payload.data && payload.data.dependencies) || []).filter((d) => d.path !== depPath);
+        await callFunction("set_dependencies", { project_dir: this.projectDir, dependencies: deps }, this.nodeId);
+        this.message = `已移除依赖：${depPath}`;
+        await this.loadDepsGraph();
+      } catch (e) {
+        this.error = e.message || "移除依赖失败";
+      } finally {
+        this.depBusy = false;
+      }
+    },
+    // 当前激活项目已配置的依赖（供列表展示/删除）
+    activeDeps() {
+      if (!this.depsGraph || !this.projectDir) return [];
+      const node = this.depsGraph.nodes.find((n) => n.path === this.projectDir);
+      if (!node) return [];
+      return this.depsGraph.edges.filter((e) => e.from === this.projectDir).map((e) => e.to);
+    },
+    // ---- 知识回流（sync）----
+    // 加载当前项目的同步状态（基线是否存在/文档是否过期/产物是否被手工编辑）
+    async loadSyncStatus() {
+      if (!this.projectDir) {
+        this.syncStatus = null;
+        return;
+      }
+      try {
+        const payload = await callFunction(
+          "get_sync_status",
+          { project_dir: this.projectDir },
+          this.nodeId,
+        );
+        this.syncStatus = payload.data || null;
+      } catch (e) {
+        this.syncStatus = null;
+      }
+    },
+    // 记录知识回流基线（把当前 commit + 产物 hash 固化为基线）
+    async doRecordBaseline() {
+      if (!this.projectDir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
+      this.syncBusy = true;
+      this.error = "";
+      this.message = "";
+      try {
+        const payload = await callFunction(
+          "record_sync_baseline",
+          { project_dir: this.projectDir },
+          this.nodeId,
+        );
+        const d = payload.data || {};
+        this.message = `已记录基线：${d.base_commit}（${(d.artifacts && Object.keys(d.artifacts).length) || 0} 个产物）`;
+        await this.loadSyncStatus();
+      } catch (e) {
+        this.error = e.message || "记录基线失败";
+      } finally {
+        this.syncBusy = false;
+      }
+    },
+    // 分析知识回流差异（基线 commit → 当前 HEAD 的代码变更 → 受影响产物）
+    async doAnalyzeSync() {
+      if (!this.projectDir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
+      this.syncBusy = true;
+      this.error = "";
+      this.message = "";
+      try {
+        const payload = await callFunction(
+          "analyze_sync_diff",
+          { project_dir: this.projectDir },
+          this.nodeId,
+        );
+        const d = payload.data || {};
+        if (d.up_to_date) {
+          this.message = "文档与代码已同步（无代码变更）";
+        } else {
+          this.message = `发现 ${(d.changed_files || []).length} 个代码文件变更，影响 ${(d.affected_artifacts || []).length} 个产物` +
+            (d.affected_artifacts && d.affected_artifacts.length ? `：${d.affected_artifacts.join(", ")}` : "");
+        }
+        await this.loadSyncStatus();
+      } catch (e) {
+        this.error = e.message || "分析差异失败";
+      } finally {
+        this.syncBusy = false;
+      }
+    },
+  },
+  template: `
+  <div style="display:flex;flex-direction:column;height:100%;font-size:12px;color:#ddd;overflow:hidden;">
+    <!-- 头部 -->
+    <div style="padding:8px 10px;border-bottom:1px solid #333;display:flex;align-items:center;gap:6px;flex-shrink:0;">
+      <span style="font-weight:bold;font-size:13px;">🔄 Reversa 逆向工程</span>
+      <span style="flex:1;"></span>
+      <select v-model="nodeId" @change="onNodeChange"
+        style="padding:3px 6px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:11px;">
+        <option v-for="n in nodes" :key="n.node_id" :value="n.node_id">{{ n.node_id }}</option>
+      </select>
+      <button @click="helpVisible = true" title="使用说明"
+        style="background:none;border:none;color:#888;cursor:pointer;font-size:14px;">?</button>
+    </div>
+
+    <!-- 项目区 -->
+    <div style="padding:8px 10px;border-bottom:1px solid #333;flex-shrink:0;">
+      <div style="font-size:11px;color:#888;margin-bottom:4px;">项目目录</div>
+      <div style="display:flex;gap:4px;margin-bottom:4px;">
+        <input v-model="projectInput" placeholder="输入项目目录（如 /path/to/legacy）"
+          @keydown.enter.prevent="addProject"
+          style="flex:1;min-width:0;padding:4px 6px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:12px;">
+        <button @click="addProject" :disabled="busy"
+          style="padding:4px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">添加</button>
+      </div>
+      <div v-if="dirs.length" style="display:flex;flex-wrap:wrap;gap:4px;">
+        <span v-for="d in dirs" :key="d" @click="selectProject(d)" @contextmenu.prevent="openDirMenu(d, $event)"
+          :title="d + '（右键：创建 Agent 执行规格逆向分析）'"
+          :style="{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 6px',borderRadius:'10px',cursor:'pointer',fontSize:'11px',maxWidth:'180px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',background: d === projectDir ? '#1f6feb' : '#2d2d2d', color: d === projectDir ? '#fff' : '#aaa'}">
+          {{ d }}
+          <span @click.stop="removeProject(d)" style="color:inherit;opacity:.7;">×</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- 状态区 -->
+    <div v-if="projectDir" style="padding:8px 10px;border-bottom:1px solid #333;flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+        <span style="font-size:11px;color:#888;">状态：</span>
+        <span v-if="loading" style="color:#888;">加载中…</span>
+        <span v-else-if="installed" style="color:#3fb950;">已安装 v{{ status.version }}</span>
+        <span v-else style="color:#d29922;">未安装</span>
+        <span style="flex:1;"></span>
+        <button @click="refresh" :disabled="busy" title="刷新"
+          style="padding:3px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">刷新</button>
+      </div>
+      <!-- 阶段进度条 -->
+      <div v-if="installed" style="display:flex;gap:2px;margin-bottom:6px;">
+        <div v-for="p in phaseList" :key="p.key" :title="p.key"
+          :style="{flex:'1',height:'6px',borderRadius:'3px',background: p.state === 'done' ? '#3fb950' : (p.state === 'current' ? '#1f6feb' : '#333')}">
+        </div>
+      </div>
+      <div v-if="installed" style="display:flex;gap:6px;font-size:11px;color:#888;margin-bottom:6px;flex-wrap:wrap;">
+        <span v-for="p in phaseList" :key="p.key"
+          :style="{color: p.state === 'done' ? '#3fb950' : (p.state === 'current' ? '#79c0ff' : '#888')}">
+          {{ p.state === 'done' ? '✓' : (p.state === 'current' ? '▶' : '○') }} {{ p.label }}
+        </span>
+      </div>
+      <div v-if="installed" style="font-size:11px;color:#888;margin-bottom:6px;">
+        项目：{{ status.project }} · 语言：{{ status.chat_language }} · 输出：{{ status.output_folder }}
+      </div>
+      <!-- 操作按钮 -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button v-if="!installed" @click="doInstall" :disabled="busy || loading"
+          style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+          {{ busy ? '安装中…' : '安装 Reversa' }}
+        </button>
+        <button v-if="installed" @click="doUninstall" :disabled="busy || loading"
+          style="padding:5px 12px;background:#da3633;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+          {{ busy ? '卸载中…' : '卸载' }}
+        </button>
+        <button @click="doExportRules" :disabled="exportBusy || !installed"
+          style="padding:5px 12px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+          {{ exportBusy ? '导出中…' : '导出 Rules' }}
+        </button>
+      </div>
+      <!-- 知识回流（sync）状态与操作 -->
+      <div v-if="installed" style="margin-top:6px;padding-top:6px;border-top:1px solid #333;">
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:4px;flex-wrap:wrap;">
+          <span style="color:#888;">知识回流：</span>
+          <template v-if="syncStatus && syncStatus.has_baseline">
+            <span :style="{color: syncStatus.stale ? '#d29922' : '#3fb950'}">
+              {{ syncStatus.stale ? '⚠ 文档过期' : '✓ 已同步' }}
+            </span>
+            <span style="color:#666;" :title="'基线：' + syncStatus.base_commit + ' → 当前：' + (syncStatus.head_commit || '?')">
+              {{ syncStatus.base_commit }} → {{ syncStatus.head_commit || '?' }}
+            </span>
+          </template>
+          <span v-else style="color:#666;">未记录基线</span>
+          <span style="flex:1;"></span>
+          <button @click="doRecordBaseline" :disabled="syncBusy" title="把当前 commit + 产物 hash 固化为基线"
+            style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
+            {{ syncBusy ? '处理中…' : '记录基线' }}
+          </button>
+          <button @click="doAnalyzeSync" :disabled="syncBusy || !(syncStatus && syncStatus.has_baseline)" title="分析基线到当前 HEAD 的代码变更对产物的影响"
+            style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
+            {{ syncBusy ? '处理中…' : '分析差异' }}
+          </button>
+        </div>
+        <div v-if="syncStatus && (syncStatus.changed_artifacts.length || syncStatus.added_artifacts.length || syncStatus.removed_artifacts.length)"
+          style="font-size:11px;color:#d29922;margin-bottom:2px;">
+          产物变化：<span v-for="a in syncStatus.changed_artifacts" :key="'c'+a" style="margin-right:4px;">✎ {{ a }}</span>
+          <span v-for="a in syncStatus.added_artifacts" :key="'a'+a" style="margin-right:4px;">＋ {{ a }}</span>
+          <span v-for="a in syncStatus.removed_artifacts" :key="'r'+a" style="margin-right:4px;">－ {{ a }}</span>
+        </div>
+      </div>
+      <label v-if="installed" style="display:flex;align-items:center;gap:4px;margin-top:6px;font-size:11px;color:#888;cursor:pointer;">
+        <input type="checkbox" v-model="includeGap"> 导出 🔴GAP（默认只导出 🟢CONFIRMED/🟡INFERRED）
+      </label>
+    </div>
+
+    <!-- 消息/错误 -->
+    <div v-if="message" style="padding:4px 10px;background:#1f3d2b;color:#3fb950;font-size:11px;flex-shrink:0;">{{ message }}</div>
+    <div v-if="error" style="padding:4px 10px;background:#3d1f1f;color:#f85149;font-size:11px;flex-shrink:0;">{{ error }}</div>
+
+    <!-- 依赖图 -->
+    <div v-if="projectDir" style="border-bottom:1px solid #333;flex-shrink:0;">
+      <div style="padding:6px 10px;font-size:11px;color:#888;display:flex;align-items:center;gap:6px;">
+        <span>依赖图（箭头指向被依赖的上游）</span>
+        <span style="flex:1;"></span>
+        <button @click="loadDepsGraph" :disabled="depsLoading" title="刷新依赖图"
+          style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
+          {{ depsLoading ? '加载中…' : '刷新' }}
+        </button>
+      </div>
+      <div v-if="depsLayout" style="overflow:auto;padding:4px 10px 8px;">
+        <svg :width="depsLayout.width" :height="depsLayout.height" style="display:block;">
+          <!-- 边（箭头指向被依赖方） -->
+          <line v-for="e in depsLayout.edges" :key="e.from + '->' + e.to"
+            :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2"
+            stroke="#7d8590" stroke-width="1.5" marker-end="url(#reversaArrow)"/>
+          <!-- 节点 -->
+          <g v-for="n in depsLayout.nodes" :key="n.path">
+            <rect :x="n.x" :y="n.y" :width="n.w" :height="n.h" rx="6"
+              :fill="n.path === projectDir ? '#1f6feb' : '#2d2d2d'" stroke="#444" stroke-width="1"/>
+            <text :x="n.x + n.w / 2" :y="n.y + n.h / 2" text-anchor="middle" dominant-baseline="central"
+              :fill="n.path === projectDir ? '#fff' : '#ccc'" font-size="11" style="pointer-events:none;">{{ n.label }}</text>
+            <title>{{ n.path }}</title>
+          </g>
+        </svg>
+        <svg width="0" height="0" style="position:absolute;">
+          <defs>
+            <marker id="reversaArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#7d8590"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+      <div v-else style="padding:4px 10px 8px;color:#666;font-size:11px;">
+        {{ depsLoading ? '加载依赖图…' : '暂无依赖（在下方为当前项目添加上游依赖）' }}
+      </div>
+      <!-- 当前项目依赖配置 -->
+      <div style="padding:0 10px 8px;">
+        <div style="display:flex;gap:4px;margin-bottom:4px;">
+          <input v-model="depInput" placeholder="上游依赖目录（如 /path/to/upstream）"
+            @keydown.enter.prevent="addDependency"
+            style="flex:1;min-width:0;padding:3px 6px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:11px;">
+          <button @click="addDependency" :disabled="depBusy"
+            style="padding:3px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">添加依赖</button>
+        </div>
+        <div v-if="activeDeps().length" style="display:flex;flex-wrap:wrap;gap:4px;">
+          <span v-for="dep in activeDeps()" :key="dep" :title="dep"
+            style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:10px;background:#2d2d2d;color:#aaa;font-size:11px;max-width:180px;overflow:hidden;textOverflow:ellipsis;whiteSpace:nowrap;">
+            {{ baseName(dep) }}
+            <span @click="removeDependency(dep)" style="cursor:pointer;opacity:.7;" title="移除依赖">×</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 产物浏览 -->
+    <div v-if="projectDir" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+      <div style="padding:6px 10px;font-size:11px;color:#888;border-bottom:1px solid #333;flex-shrink:0;">
+        规格产物（_reversa_sdd/）
+      </div>
+      <div style="flex:1;overflow:auto;padding:4px 0;">
+        <div v-if="!artifacts.length" style="padding:10px;color:#666;font-size:11px;">
+          {{ installed ? '暂无产物，请运行 Reversa 分析' : '安装后运行 Reversa 分析生成产物' }}
+        </div>
+        <div v-for="node in artifacts" :key="node.path">
+          <!-- 目录 -->
+          <div v-if="node.type === 'dir'" @click="toggleDir(node)"
+            style="padding:3px 10px;cursor:pointer;color:#79c0ff;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            {{ isDirOpen(node) ? '▾' : '▸' }} 📁 {{ node.name }}
+          </div>
+          <div v-if="node.type === 'dir' && isDirOpen(node)" style="padding-left:14px;">
+            <div v-for="child in node.children" :key="child.path">
+              <div v-if="child.type === 'dir'" @click="toggleDir(child)"
+                style="padding:3px 10px;cursor:pointer;color:#79c0ff;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                {{ isDirOpen(child) ? '▾' : '▸' }} 📁 {{ child.name }}
+              </div>
+              <div v-if="child.type === 'dir' && isDirOpen(child)" style="padding-left:14px;">
+                <div v-for="g in child.children" :key="g.path" @click="openArtifact(g)"
+                  :style="{padding:'3px 10px',cursor:'pointer',fontSize:'12px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',color: selectedArtifact && selectedArtifact.path === g.path ? '#1f6feb' : '#ddd'}">
+                  📄 {{ g.name }}
+                  <span v-if="confidenceBadge(g.path)" style="margin-left:4px;font-size:10px;"></span>
+                </div>
+              </div>
+              <div v-else @click="openArtifact(child)"
+                :style="{padding:'3px 10px',cursor:'pointer',fontSize:'12px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',color: selectedArtifact && selectedArtifact.path === child.path ? '#1f6feb' : '#ddd'}">
+                📄 {{ child.name }}
+              </div>
+            </div>
+          </div>
+          <!-- 文件 -->
+          <div v-else @click="openArtifact(node)"
+            :style="{padding:'3px 10px',cursor:'pointer',fontSize:'12px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',color: selectedArtifact && selectedArtifact.path === node.path ? '#1f6feb' : '#ddd'}">
+            📄 {{ node.name }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 产物内容 -->
+    <div v-if="selectedArtifact" style="border-top:1px solid #333;flex-shrink:0;max-height:40%;display:flex;flex-direction:column;">
+      <div style="padding:4px 10px;font-size:11px;color:#888;display:flex;align-items:center;gap:6px;border-bottom:1px solid #333;">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ selectedArtifact.path }}</span>
+        <span v-if="confidenceBadge(selectedArtifact.content)" style="font-size:10px;">{{ confidenceBadge(selectedArtifact.content) }}</span>
+        <button @click="selectedArtifact = null; artifactContent = ''"
+          style="background:none;border:none;color:#888;cursor:pointer;font-size:12px;">×</button>
+      </div>
+      <pre style="flex:1;overflow:auto;margin:0;padding:8px 10px;font-size:11px;color:#ccc;white-space:pre-wrap;word-break:break-word;">{{ artifactContent }}</pre>
+    </div>
+
+    <!-- 项目目录右键菜单 -->
+    <div v-if="menuVisible" :style="menuStyle"
+      style="position:fixed;z-index:9999;background:#2d2d30;border:1px solid #454545;border-radius:6px;box-shadow:0 4px 12px #0008;padding:4px;min-width:200px;">
+      <div style="padding:4px 10px;font-size:11px;color:#888;border-bottom:1px solid #333;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;" :title="menuDir">{{ menuDir }}</div>
+      <div @click="handleNewAgent(menuDir)"
+        style="padding:6px 10px;font-size:12px;color:#ddd;cursor:pointer;border-radius:4px;white-space:nowrap;">创建 Agent 执行规格逆向分析</div>
+      <div @click="handleInCurrentAgent(menuDir)"
+        style="padding:6px 10px;font-size:12px;color:#ddd;cursor:pointer;border-radius:4px;white-space:nowrap;">在当前 Agent 中执行</div>
+    </div>
+
+    <!-- 帮助弹层 -->
+    <div v-if="helpVisible" @click.self="helpVisible = false"
+      style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;">
+      <div style="background:#1e1e1e;border:1px solid #444;border-radius:8px;padding:16px;max-width:420px;max-height:80%;overflow:auto;font-size:12px;color:#ddd;">
+        <div style="font-weight:bold;font-size:13px;margin-bottom:8px;">Reversa 逆向工程插件</div>
+        <div style="line-height:1.6;">
+          <p><b>用途</b>：对遗留项目执行规格逆向工程，生成结构化 Markdown 规格（_reversa_sdd/），并导出为 Jarvis rule 知识库。</p>
+          <p><b>使用步骤</b>：</p>
+          <ol style="padding-left:18px;margin:4px 0;">
+            <li>添加项目目录（需为已存在目录）</li>
+            <li>点击「安装 Reversa」安装工作区（绕过交互式 CLI）</li>
+            <li>由 Jarvis Agent 依据转换后的 rules 编排执行 5 阶段分析</li>
+            <li>浏览产物，按置信度「导出 Rules」复用</li>
+          </ol>
+          <p><b>5 阶段</b>：侦察 → 挖掘 → 解读 → 生成 → 评审</p>
+          <p><b>置信度</b>：🟢CONFIRMED 已确认 / 🟡INFERRED 推断 / 🔴GAP 缺口（默认不导出）</p>
+          <p><b>数据</b>：设置存于浏览器 localStorage（按节点+项目隔离）；跨设备共享靠两台设备指向同一工作区目录。</p>
+        </div>
+        <div style="text-align:right;margin-top:10px;">
+          <button @click="helpVisible = false"
+            style="padding:5px 14px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  `,
+};
