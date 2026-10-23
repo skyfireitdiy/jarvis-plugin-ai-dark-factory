@@ -724,6 +724,26 @@ export default {
         this.depsLoading = false;
       }
     },
+    // 用宿主目录选择弹窗挑选上游依赖目录（返回路径+节点）。
+    // 依赖属于当前激活项目（当前节点），选择后填入输入框并直接添加，无需手输。
+    async pickDependencyDir() {
+      const pick =
+        typeof window !== "undefined" && window.__jarvisPickDirectoryWithNode;
+      if (typeof pick !== "function") {
+        this.error = "宿主未提供目录选择通道，请手动填写上游依赖路径";
+        return;
+      }
+      try {
+        const picked = await pick();
+        if (!picked || !picked.path) {
+          return;
+        }
+        this.depInput = picked.path;
+        this.addDependency();
+      } catch (e) {
+        this.error = String((e && e.message) || e);
+      }
+    },
     // 为当前激活项目添加一个上游依赖
     async addDependency() {
       const dep = (this.depInput || "").trim();
@@ -1066,6 +1086,8 @@ export default {
           <input v-model="depInput" placeholder="上游依赖目录（如 /path/to/upstream）"
             @keydown.enter.prevent="addDependency"
             style="flex:1;min-width:0;padding:3px 6px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:11px;">
+          <button @click="pickDependencyDir" title="用目录选择弹窗挑选上游依赖目录"
+            style="padding:3px 10px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:11px;">选择目录</button>
           <button @click="addDependency" :disabled="depBusy"
             style="padding:3px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">添加依赖</button>
         </div>
