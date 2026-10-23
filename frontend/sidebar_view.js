@@ -567,7 +567,7 @@ export default {
         );
         refs.forEach((r) => {
           if (r.type === "web") {
-            lines.push(`- 网页：${r.value}（用 read_webpage 抓取正文作为参考）`);
+            lines.push(`- 网页：${r.value}（按站点情况选择读取方式：普通公开网页用 read_webpage；内网/需登录的站点优先用专用工具或浏览器扩展（browser_ext）读取；无法读取时在结论中标注）`);
           } else if (r.type === "dir") {
             lines.push(`- 目录：${r.value}（浏览该目录下文档/源码，作为参考输入）`);
           } else {
