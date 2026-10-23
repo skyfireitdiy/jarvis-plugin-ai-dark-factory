@@ -14,9 +14,9 @@
 | 📚 Rule 知识库导出 | 把逆向产物导出为 Jarvis rule（每产物一 rule、覆盖式更新、metadata 溯源），供后续开发直接引用 |
 | 🔁 知识回流 sync | 基线记录 + git diff 差异分析 + traceability 矩阵映射受影响产物，文档与代码同步维护 |
 | 📐 规则集 | `rules/` 提供 spec_writing / tdd_iron_rule / orchestration / holdout_discipline 四条铁律 |
-| 🛠️ 工具集 | `tools/` 提供 spec_validator（NLSpec 校验）、holdout_generator（隐藏验收场景）、gate_calculator（门禁指标）、reversa（逆向分析生命周期） |
+| 🛠️ 工具集 | `tools/` 提供 holdout_generator（隐藏验收场景）、gate_calculator（门禁指标）、reversa（逆向分析生命周期） |
 | ⚙️ 编排引擎 | 通过 `orchestration` 扩展点注册两条流水线模板，配合 `pipeline_runner` 驱动多 Agent 流水线 |
-| ⌨️ 指令模板 | `replace_map` 提供 `<dark-factory/run>` / `<dark-factory/issue>` / `<dark-factory/pr>` 三种工作流模板 |
+| ⌨️ 指令模板 | `replace_map` 提供 `<dark-factory/clarify>`（需求澄清）/ `<dark-factory/run>` / `<dark-factory/issue>` / `<dark-factory/pr>` 四种工作流模板 |
 | 🖥️ 前端视图 | 侧边栏 Reversa 逆向工程视图：生命周期管理、产物浏览、依赖图、知识回流手动触发 |
 | 📂 现存资料库 | 为项目添加文档/网页/目录参考资料，反构时注入任务提示词作补充输入（仅进提示词，不落盘到项目） |
 
@@ -83,8 +83,7 @@ ai-dark-factory/
 ├── tools/
 │   ├── gate_calculator.py
 │   ├── holdout_generator.py
-│   ├── reversa.py
-│   └── spec_validator.py
+│   └── reversa.py
 └── test/
     └── test_api.py
 ```
