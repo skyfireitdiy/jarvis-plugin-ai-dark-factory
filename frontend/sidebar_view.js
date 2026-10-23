@@ -18,6 +18,9 @@ const DIRS_KEY_PREFIX = "jarvis_reversa_dirs_";
 const ACTIVE_DIR_KEY_PREFIX = "jarvis_reversa_active_";
 // 每节点项目目录历史上限（最近使用在前，超出截断）。
 const DIRS_HISTORY_MAX = 10;
+// 每节点+项目现存资料库持久化 key 前缀：jarvis_reversa_refs_<node>_<project>（JSON 数组）。
+// 资料类型：doc=文档路径 / web=网页 URL / dir=目录路径；仅注入反构提示词，不落盘到项目。
+const REFS_KEY_PREFIX = "jarvis_reversa_refs_";
 // 轮询间隔（毫秒）：3-5s 轮询 state.json（决策 9）。
 const POLL_INTERVAL = 4000;
 // Reversa 5 阶段（state.json 的 pending/completed 字段值）
@@ -47,6 +50,15 @@ function dirsKey(nodeId) {
 // 按节点生成激活项目目录存储 key
 function activeDirKey(nodeId) {
   return ACTIVE_DIR_KEY_PREFIX + (String(nodeId || "master").trim() || "master");
+}
+// 按节点+项目生成现存资料库存储 key（资料只属于具体项目，切换项目即切换资料集）
+function refsKey(nodeId, projectDir) {
+  return (
+    REFS_KEY_PREFIX +
+    (String(nodeId || "master").trim() || "master") +
+    "_" +
+    (String(projectDir || "").trim() || "default")
+  );
 }
 
 // 复刻 App.vue 的 gateway 地址解析（侧边栏组件无 props 注入，需自行解析）
@@ -167,6 +179,11 @@ export default {
       depsLoading: false,
       depInput: "",
       depBusy: false,
+      // 现存资料库（doc=文档路径 / web=网页 URL / dir=目录路径；仅注入反构提示词）
+      refs: [],
+      refInput: "",
+      refType: "doc",
+      refBusy: false,
       // 知识回流（sync）
       syncStatus: null, // {has_baseline, base_commit, head_commit, stale, changed_artifacts, ...}
       syncBusy: false,
@@ -334,6 +351,7 @@ export default {
       const active = (localStorage.getItem(activeDirKey(this.nodeId)) || "").trim();
       this.projectDir = active || "";
       this.projectInput = this.projectDir;
+      this.restoreRefs();
     },
     persistDirs() {
       localStorage.setItem(dirsKey(this.nodeId), JSON.stringify(this.dirs));
@@ -341,6 +359,75 @@ export default {
         localStorage.setItem(activeDirKey(this.nodeId), this.projectDir);
       } else {
         localStorage.removeItem(activeDirKey(this.nodeId));
+      }
+    },
+    // ---- 现存资料库（localStorage 按节点+项目持久化，仅注入反构提示词）----
+    // 恢复当前项目（this.projectDir）的资料列表；无项目时清空。
+    restoreRefs() {
+      if (!this.projectDir) {
+        this.refs = [];
+        return;
+      }
+      const raw = localStorage.getItem(refsKey(this.nodeId, this.projectDir));
+      let refs = [];
+      try {
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) refs = parsed;
+      } catch (e) {
+        refs = [];
+      }
+      this.refs = refs.filter(
+        (r) => r && (r.type === "doc" || r.type === "web" || r.type === "dir") && String(r.value || "").trim(),
+      );
+    },
+    persistRefs() {
+      if (!this.projectDir) return;
+      localStorage.setItem(refsKey(this.nodeId, this.projectDir), JSON.stringify(this.refs));
+    },
+    // 添加一条资料（去重：同类型同值不重复添加）
+    addRef() {
+      const value = (this.refInput || "").trim();
+      if (!this.projectDir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
+      if (!value) {
+        this.error = "请输入资料（文档路径 / 网页 URL / 目录路径）";
+        return;
+      }
+      if (this.refs.some((r) => r.type === this.refType && r.value === value)) {
+        this.message = "该资料已存在";
+        this.refInput = "";
+        return;
+      }
+      this.refs.push({ type: this.refType, value });
+      this.persistRefs();
+      this.message = `已添加${this.refType === "web" ? "网页" : this.refType === "dir" ? "目录" : "文档"}：${value}`;
+      this.refInput = "";
+    },
+    // 删除一条资料
+    removeRef(idx) {
+      this.refs.splice(idx, 1);
+      this.persistRefs();
+    },
+    // 用宿主目录选择弹窗挑选资料目录（dir 类型），填入输入框并直接添加
+    async pickRefDir() {
+      const pick =
+        typeof window !== "undefined" && window.__jarvisPickDirectoryWithNode;
+      if (typeof pick !== "function") {
+        this.error = "宿主未提供目录选择通道，请手动填写目录路径";
+        return;
+      }
+      try {
+        const picked = await pick();
+        if (!picked || !picked.path) {
+          return;
+        }
+        this.refInput = picked.path;
+        this.refType = "dir";
+        this.addRef();
+      } catch (e) {
+        this.error = String((e && e.message) || e);
       }
     },
     // 用宿主目录选择弹窗挑选项目目录（返回路径+节点）。
@@ -381,12 +468,14 @@ export default {
       this.projectDir = dir;
       this.persistDirs();
       this.error = "";
+      this.restoreRefs();
       this.refresh();
     },
     selectProject(dir) {
       this.projectDir = dir;
       this.projectInput = dir;
       this.persistDirs();
+      this.restoreRefs();
       this.refresh();
     },
     removeProject(dir) {
@@ -397,6 +486,7 @@ export default {
         localStorage.removeItem(activeDirKey(this.nodeId));
       }
       this.persistDirs();
+      this.restoreRefs();
       this.refresh();
     },
     // ---- 项目目录右键菜单 ----
@@ -466,6 +556,27 @@ export default {
         }
       } catch (e) {
         // 读取依赖失败不阻断任务描述生成
+      }
+      // 注入现存资料库参考（决策：仅进提示词，Agent 自行读取路径/抓取 URL，不落盘到项目）
+      const refs = this.refs.filter((r) => r && String(r.value || "").trim());
+      if (refs.length) {
+        lines.push(
+          "",
+          "现存资料库参考：",
+          "以下是该项目已有的参考资料，反构时请结合这些资料（文档/网页/目录）交叉验证，作为领域/接口/架构的补充输入：",
+        );
+        refs.forEach((r) => {
+          if (r.type === "web") {
+            lines.push(`- 网页：${r.value}（用 read_webpage 抓取正文作为参考）`);
+          } else if (r.type === "dir") {
+            lines.push(`- 目录：${r.value}（浏览该目录下文档/源码，作为参考输入）`);
+          } else {
+            lines.push(`- 文档：${r.value}（用 read_code 读取该文件内容作为参考）`);
+          }
+        });
+        lines.push(
+          "说明：以上资料仅作分析参考，不要把资料内容当作项目源码本身；若资料与源码冲突，以源码为准并在结论中标注。",
+        );
       }
       return lines.join("\n");
     },
@@ -960,6 +1071,34 @@ export default {
           :style="{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 6px',borderRadius:'10px',cursor:'pointer',fontSize:'11px',maxWidth:'180px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',background: d === projectDir ? '#1f6feb' : '#2d2d2d', color: d === projectDir ? '#fff' : '#aaa'}">
           {{ d }}
           <span @click.stop="removeProject(d)" style="color:inherit;opacity:.7;">×</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- 现存资料库（仅注入反构提示词，不落盘到项目） -->
+    <div v-if="projectDir" style="padding:8px 10px;border-bottom:1px solid #333;flex-shrink:0;">
+      <div style="font-size:11px;color:#888;margin-bottom:4px;">现存资料库 <span style="color:#666;">（反构时注入提示词作参考）</span></div>
+      <div style="display:flex;gap:4px;margin-bottom:4px;">
+        <select v-model="refType" title="资料类型"
+          style="padding:3px 4px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:11px;">
+          <option value="doc">文档</option>
+          <option value="web">网页</option>
+          <option value="dir">目录</option>
+        </select>
+        <input v-model="refInput" :placeholder="refType === 'web' ? '网页 URL（如 https://example.com/doc）' : (refType === 'dir' ? '目录路径（如 /path/to/docs）' : '文档路径（如 /path/to/spec.md）')"
+          @keydown.enter.prevent="addRef"
+          style="flex:1;min-width:0;padding:3px 6px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:11px;">
+        <button v-if="refType === 'dir'" @click="pickRefDir" title="用目录选择弹窗挑选资料目录"
+          style="padding:3px 10px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:11px;">选择目录</button>
+        <button @click="addRef" :disabled="refBusy"
+          style="padding:3px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">添加</button>
+      </div>
+      <div v-if="refs.length" style="display:flex;flex-wrap:wrap;gap:4px;">
+        <span v-for="(r, idx) in refs" :key="r.type + ':' + r.value" :title="r.value"
+          style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:10px;background:#2d2d2d;color:#aaa;font-size:11px;max-width:200px;overflow:hidden;textOverflow:ellipsis;whiteSpace:nowrap;">
+          <span style="font-size:10px;">{{ r.type === 'web' ? '🌐' : (r.type === 'dir' ? '📁' : '📄') }}</span>
+          {{ r.type === 'web' ? r.value : baseName(r.value) }}
+          <span @click="removeRef(idx)" style="cursor:pointer;opacity:.7;" title="移除资料">×</span>
         </span>
       </div>
     </div>
