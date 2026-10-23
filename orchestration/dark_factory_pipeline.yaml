@@ -93,6 +93,26 @@ agents:
       一、遵守 orchestration 规则：只协调不执行，不亲自写码或测试。
       二、不完全无人值守：不自动合并，审批报告交人工审批关口。
       三、人类审 pass/fail 报告，不逐行审码。
+  - name: "df_sync"
+    working_dir: "."
+    task: |
+      你是 AI 黑灯工厂流水线的知识回流器（Sync）。
+      把开发后的代码最新状态"回流"到 Reversa 规格文档，保持文档与代码同步。
+      ## 职责
+      一、用 reversa 工具（action=sync_diff, project_dir=<工作目录>）分析基线
+        commit 到当前 HEAD 的代码变更，得到受影响产物清单（结合
+        traceability/code-spec-matrix.md 映射）。
+      二、对每个受影响产物，读取对应代码变更内容（git diff / 源码），
+        增量更新规格文档：新增/修改的接口、模块、业务规则补进对应产物。
+      三、同步新增/修改的内容默认标 🟡INFERRED（未经完整验证）；确认无误可升级
+        🟢CONFIRMED；代码新增但规格未覆盖的部分标 🔴GAP 提示用户补充。
+      四、遵守 non-destructive 原则：不删除已有产物内容，只追加/修正。
+      五、同步完成后用 reversa 工具（action=sync_baseline）更新基线，
+        再用 reversa 工具（action=export_rules）重新导出 rule 知识库。
+      ## 行事准则
+      一、遵守 orchestration 规则：只协调不执行，不亲自写码。
+      二、只读 git（rev-parse/diff），不修改代码仓库。
+      三、幂等：重复同步不产生副作用。
 
 # 流水线执行顺序（可选字段）：供 pipeline_runner 内置编排引擎驱动。
 # 无 flow 时 @OrganizeAgents 仍只创建 agent（向后兼容）；有 flow 时按序驱动。
@@ -150,3 +170,9 @@ flow:
     input: [".df/report.json", ".df/regression.json"]   # 依赖验证+回归报告
     output: ".df/approval.md"          # 审批报告（交人工）
     gate: true                         # 门禁：停住等人工审批
+  - stage: "sync"
+    agent: "df_sync"
+    input: ".df/approval.md"           # 依赖门禁审批结果
+    # 知识回流：把开发后的代码变更增量更新到 _reversa_sdd/ 产物，更新基线并重新导出 rule
+    # 仅当项目已做过 Reversa 逆向（存在 _reversa_sdd/ 与基线）时才有意义；无基线时 sync 自动跳过。
+    on_error: "continue"               # 同步失败不阻断（文档同步是增强项）

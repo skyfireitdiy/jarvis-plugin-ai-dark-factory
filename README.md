@@ -9,7 +9,7 @@
 | 功能 | 说明 |
 | --- | --- |
 | 🏭 黑灯工厂流水线 | `dark-factory-pipeline` 编排模板：Specs → 可工作的软件，六阶段（规划 → 生成隐藏场景 → 生成（TDD）→ 验证 → 回归 → 门禁） |
-| 🔄 融合流水线 | `dark-factory-pipeline-reversa` 编排模板：逆向分析（Reversa）→ 正向开发（黑灯工厂六阶段）→ 知识回流（sync）完整闭环 |
+| 🔄 知识回流 | 正向流水线 `dark-factory-pipeline` 末尾内置 `sync` 阶段：门禁通过后把代码变更增量回流到 `_reversa_sdd/` 规格，文档与代码同步 |
 | 🔍 规格逆向工程 | 对遗留项目执行 Reversa 逆向分析，生成 `_reversa_sdd/` 结构化规格（inventory / domain / architecture / sdd / traceability，带置信度标记 🟢CONFIRMED / 🟡INFERRED / 🔴GAP） |
 | 📚 Rule 知识库导出 | 把逆向产物导出为 Jarvis rule（每产物一 rule、覆盖式更新、metadata 溯源），供后续开发直接引用 |
 | 🔁 知识回流 sync | 基线记录 + git diff 差异分析 + traceability 矩阵映射受影响产物，文档与代码同步维护 |
@@ -46,15 +46,15 @@ jarvis --list-plugins   # 确认 ai-dark-factory 插件已注册
 - **`<dark-factory/issue>`**：用黑灯工厂工作流开发 GitHub Issue 需求
 - **`<dark-factory/pr>`**：用黑灯工厂工作流处理 GitHub Pull Request
 
-### 2. 融合流水线（逆向 → 正向 → 回流）
-对遗留项目做「逆向分析 → 正向开发 → 知识回流」完整闭环：
+### 2. 遗留项目逆向分析（手动触发）
+对遗留项目做规格逆向分析，生成 `_reversa_sdd/` 结构化规格：
 
-1. **逆向分析**：用 `reversa` 工具对目标项目执行 Reversa 逆向分析（`install` → `analyze`），生成 `_reversa_sdd/` 结构化规格；
-2. **正向开发**：让 Agent 使用 `pipeline_runner` 工具，配合 `orchestration/dark_factory_pipeline_reversa.yaml` 模板动态生成编排文件执行——NLSpec 中直接引用逆向产物路径（如 `_reversa_sdd/architecture.md`），Agent 自行读取；
-3. **知识回流**：流水线末尾的 `sync` 阶段记录基线、分析代码变更对产物的影响并更新，保持文档与代码同步。
+1. **逆向分析**：在侧边栏项目目录上右键，选择「创建 Agent 执行规格逆向分析」（或「在当前 Agent 中执行」），对目标项目执行 Reversa 逆向分析，生成 `_reversa_sdd/` 结构化规格；逆向是一次性的，无需每次开发都跑；
+2. **正向开发**：让 Agent 使用 `pipeline_runner` 工具，配合 `orchestration/dark_factory_pipeline.yaml` 模板动态生成编排文件执行——NLSpec 中直接引用逆向产物路径（如 `_reversa_sdd/architecture.md`），Agent 自行读取；
+3. **知识回流**：正向流水线末尾内置 `sync` 阶段（门禁通过后执行，无基线时自动跳过），记录基线、分析代码变更对产物的影响并增量更新，保持文档与代码同步。
 
 ### 3. 直接驱动编排
-让 Agent 使用 `pipeline_runner` 工具，配合插件自带的 `orchestration/dark_factory_pipeline.yaml`（六阶段）或 `orchestration/dark_factory_pipeline_reversa.yaml`（融合闭环）模板动态生成编排文件执行。
+让 Agent 使用 `pipeline_runner` 工具，配合插件自带的 `orchestration/dark_factory_pipeline.yaml`（六阶段 + 末尾 sync 回流）模板动态生成编排文件执行。
 
 ### 4. 侧边栏视图
 安装后侧边栏出现「Reversa 逆向工程」视图，可管理逆向生命周期、浏览产物、查看依赖图、手动触发知识回流。
@@ -68,8 +68,7 @@ ai-dark-factory/
 ├── assets/
 │   └── ai-dark-factory-icon.svg   # 插件图标
 ├── orchestration/
-│   ├── dark_factory_pipeline.yaml         # 六阶段流水线模板
-│   └── dark_factory_pipeline_reversa.yaml # 融合闭环流水线模板（逆向→正向→回流）
+│   └── dark_factory_pipeline.yaml         # 六阶段流水线模板（末尾含 sync 知识回流）
 ├── plugin/
 │   ├── api.py            # 后端功能层（PUBLIC_FUNCTIONS 白名单：reversa 生命周期 + sync 知识回流）
 │   └── reversa_bridge.mjs # 绕过交互式 CLI 直连 Reversa installer 库
