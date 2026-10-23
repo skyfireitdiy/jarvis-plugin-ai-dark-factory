@@ -18,9 +18,6 @@ orchestration:
   - name: dark-factory-pipeline
     description: AI 黑灯工厂编排流水线——Specs 进，可工作的软件出
     file: "{{plugin_dir}}/orchestration/dark_factory_pipeline.yaml"
-  - name: dark-factory-pipeline-reversa
-    description: AI 黑灯工厂融合流水线——逆向分析 → 正向开发 → 知识回流闭环
-    file: "{{plugin_dir}}/orchestration/dark_factory_pipeline_reversa.yaml"
 # --- 前端扩展：黑灯工厂侧边栏视图（普通用户可用，不做管理面板）---
 frontend:
   sidebar_views:
