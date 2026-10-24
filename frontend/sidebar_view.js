@@ -1159,7 +1159,7 @@ export default {
     },
   },
   template: `
-  <div style="display:flex;flex-direction:column;height:100%;font-size:12px;color:#ddd;overflow:hidden;">
+  <div style="display:flex;flex-direction:column;height:100%;font-size:12px;color:#ddd;overflow-y:auto;overflow-x:hidden;">
     <!-- 头部 -->
     <div style="padding:8px 10px;border-bottom:1px solid #333;display:flex;align-items:center;gap:6px;flex-shrink:0;">
       <span style="font-weight:bold;font-size:13px;">🏭 黑灯工厂</span>
@@ -1453,7 +1453,7 @@ export default {
     </div>
 
     <!-- 产物浏览 -->
-    <div v-if="projectDir" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+    <div v-if="projectDir" style="display:flex;flex-direction:column;">
       <div style="padding:6px 10px;font-size:11px;color:#888;border-bottom:1px solid #333;flex-shrink:0;">
         规格产物（_reversa_sdd/）
       </div>
@@ -1496,7 +1496,7 @@ export default {
     </div>
 
     <!-- 产物内容 -->
-    <div v-if="selectedArtifact" style="border-top:1px solid #333;flex-shrink:0;max-height:40%;display:flex;flex-direction:column;">
+    <div v-if="selectedArtifact" style="border-top:1px solid #333;flex-shrink:0;max-height:300px;display:flex;flex-direction:column;">
       <div style="padding:4px 10px;font-size:11px;color:#888;display:flex;align-items:center;gap:6px;border-bottom:1px solid #333;">
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ selectedArtifact.path }}</span>
         <span v-if="confidenceBadge(selectedArtifact.content)" style="font-size:10px;">{{ confidenceBadge(selectedArtifact.content) }}</span>
