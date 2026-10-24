@@ -507,11 +507,14 @@ export default {
         "- 分析完成后用 reversa 工具（action=export_rules）把产物按置信度导出为 Jarvis rule 知识库。",
         "- 分析过程与结论请分阶段汇报，最终给出规格产物清单与置信度汇总。",
         "",
-        "语言要求（重要）：",
-        "- 写入 _reversa_sdd/ 的所有规格文档（inventory/domain/architecture/sdd 等）必须使用中文撰写。",
-        "- 与用户交互、阶段汇报、结论汇总也使用中文。",
-        "- 代码标识符、文件路径、API 名称、第三方库名等专有名词保持原文，不要翻译。",
+        "语言要求（重要，优先级高于 Reversa 模板默认值）：",
+        "- 写入 _reversa_sdd/ 的所有规格文档（inventory/domain/architecture/sdd 等）必须使用简体中文撰写。",
+        "- Reversa 的 skill 模板、agent 名、阶段名（reconhecimento/escavacao/interpretacao/geracao/revisao）、章节标题与正文示例默认是葡萄牙语，这些都不是产物语言要求。",
+        "  除下列专有名词外，标题、正文、表格列名、说明文字一律译为简体中文；不要把葡萄牙语原样写进产物。",
+        "- 与用户交互、阶段汇报、结论汇总也使用简体中文。",
+        "- 以下内容保持原文不翻译：代码标识符、文件路径、命令、API/协议名、第三方库名、产品名（如 Jarvis/Reversa/CodeAgent）。",
         "- 若 .reversa/state.json 的 doc_language 与此处不一致，以此处要求为准。",
+        "- 文档开头不要保留 Reversa 模板的葡语元信息（如 \"Gerado pelo agente ... Fase 3 — Interpretação\"），改写为中文（如 \"由 Architect 代理生成（Reversa 第 3 阶段 — 解读）\"）。",
       ];
       // 注入上游依赖参考（决策：Agent 读结构化 deps.json，不依赖图）
       try {
