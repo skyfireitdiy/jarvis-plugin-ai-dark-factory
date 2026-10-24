@@ -191,10 +191,6 @@ export default {
       // 知识回流（sync）
       syncStatus: null, // {has_baseline, base_commit, head_commit, stale, changed_artifacts, ...}
       syncBusy: false,
-      // 项目目录右键菜单
-      menuVisible: false,
-      menuStyle: {},
-      menuDir: "",
       // 帮助弹层
       helpVisible: false,
       // 使用说明（闭环流程图）折叠状态
@@ -293,20 +289,11 @@ export default {
     this._pollTimer = setInterval(() => {
       this.pollStatus();
     }, POLL_INTERVAL);
-    // 点击别处 / 按 Esc 关闭右键菜单
-    this._onDocClick = () => this.closeDirMenu();
-    this._onDocKeydown = (e) => {
-      if (e.key === "Escape") this.closeDirMenu();
-    };
-    document.addEventListener("click", this._onDocClick);
-    document.addEventListener("keydown", this._onDocKeydown);
     this.refresh();
   },
   beforeUnmount() {
     if (typeof this._offAgentChanged === "function") this._offAgentChanged();
     if (this._pollTimer) clearInterval(this._pollTimer);
-    document.removeEventListener("click", this._onDocClick);
-    document.removeEventListener("keydown", this._onDocKeydown);
   },
   watch: {
     workingDir() {
@@ -479,10 +466,6 @@ export default {
       this.refresh();
     },
     selectProject(dir) {
-      if (this._suppressClick) {
-        this._suppressClick = false;
-        return;
-      }
       this.projectDir = dir;
       this.projectInput = dir;
       this.persistDirs();
@@ -501,52 +484,6 @@ export default {
       this.restoreRefs();
       this.nlspecs = [];
       this.refresh();
-    },
-    // ---- 项目目录右键菜单 ----
-    // 在项目目录 chip 上右键：弹出「创建 Agent 执行规格逆向分析 / 在当前 Agent 中执行」菜单。
-    openDirMenu(dir, event) {
-      this.menuDir = dir;
-      const menuWidth = 220;
-      const menuHeight = 76;
-      let left = event.clientX;
-      let top = event.clientY;
-      // 不超出视口右下缘
-      if (left + menuWidth > window.innerWidth - 8) {
-        left = window.innerWidth - menuWidth - 8;
-      }
-      if (left < 8) left = 8;
-      if (top + menuHeight > window.innerHeight - 8) {
-        top = window.innerHeight - menuHeight - 8;
-      }
-      if (top < 8) top = 8;
-      this.menuStyle = { left: left + "px", top: top + "px" };
-      this.menuVisible = true;
-    },
-    // 移动端长按项目目录 chip 触发右键菜单（无右键的触屏设备）
-    onDirPress(dir, event) {
-      this._pressDir = dir;
-      this._pressTimer = setTimeout(() => {
-        const touch = event && event.changedTouches && event.changedTouches[0];
-        const evt = touch
-          ? { clientX: touch.clientX, clientY: touch.clientY }
-          : { clientX: 0, clientY: 0 };
-        this.openDirMenu(dir, evt);
-        // 长按已触发菜单，抑制随后的 click（避免误选中项目）
-        this._suppressClick = true;
-      }, 500);
-    },
-    onDirRelease() {
-      clearTimeout(this._pressTimer);
-      // 长按结束后延迟清除抑制标志，覆盖随后的 click
-      if (this._suppressClick) {
-        setTimeout(() => {
-          this._suppressClick = false;
-        }, 300);
-      }
-    },
-    closeDirMenu() {
-      this.menuVisible = false;
-      this.menuDir = "";
     },
     // 生成对指定项目执行 Reversa 规格逆向分析的任务描述。
     // 由 Jarvis Agent 依据 .agents/skills 的 Reversa skills（SKILL.md）编排执行 5 阶段，
@@ -615,10 +552,13 @@ export default {
       }
       return lines.join("\n");
     },
-    // 在当前活跃 Agent 中执行该项目的规格逆向分析
+    // 在当前活跃 Agent 中执行当前项目的规格逆向分析
     async handleInCurrentAgent(dir) {
-      this.closeDirMenu();
-      if (!dir) return;
+      dir = dir || this.projectDir;
+      if (!dir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
       const send =
         typeof window !== "undefined" && window.__jarvisSendToActiveAgent;
       if (typeof send !== "function") {
@@ -633,10 +573,13 @@ export default {
         this.message = "失败: " + ((res && res.error) || "发送失败");
       }
     },
-    // 创建新 Agent 执行该项目的规格逆向分析（预填弹窗，用户确认/编辑后创建）
+    // 创建新 Agent 执行当前项目的规格逆向分析（预填弹窗，用户确认/编辑后创建）
     async handleNewAgent(dir) {
-      this.closeDirMenu();
-      if (!dir) return;
+      dir = dir || this.projectDir;
+      if (!dir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
       const openModal =
         typeof window !== "undefined" && window.__jarvisOpenCreateAgentModal;
       const create =
@@ -1212,7 +1155,7 @@ export default {
           <div style="font-weight:bold;color:#79c0ff;margin-bottom:2px;">🚀 快速上手（照着点）</div>
           <div><b>1.</b> 「① 项目」→ 输入目录或点「选择目录」，再点「添加」</div>
           <div><b>2.</b> 「② 逆向分析」→ 点「安装 Reversa」（Agent 也会自动装，纯新项目可跳过）</div>
-          <div><b>3.</b> 在项目目录上<b>右键/长按</b> → 选「创建 Agent 执行规格逆向分析」，等 5 阶段跑完</div>
+          <div><b>3.</b> 「② 逆向分析」→ 点「🚀 开始逆向（新建 Agent）」，等 5 阶段跑完</div>
           <div><b>4.</b> 「② 逆向分析」→ 浏览「规格产物」，需要时点「导出 Rules」</div>
           <div><b>5.</b> 「③ 正向开发」→ 点「新建」让 Agent 澄清需求（或已有 spec 直接点「开启」）</div>
           <div><b>6.</b> 流水线跑完即完成——「④ 知识回流」会自动记录基线并同步文档</div>
@@ -1277,9 +1220,8 @@ export default {
           style="padding:4px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">添加</button>
       </div>
       <div v-if="dirs.length" style="display:flex;flex-wrap:wrap;gap:4px;">
-        <span v-for="d in dirs" :key="d" @click="selectProject(d)" @contextmenu.prevent="openDirMenu(d, $event)"
-          @touchstart.prevent="onDirPress(d, $event)" @touchend="onDirRelease" @touchmove="onDirRelease" @touchcancel="onDirRelease"
-          :title="d + '（右键/长按：创建 Agent 执行规格逆向分析）'"
+        <span v-for="d in dirs" :key="d" @click="selectProject(d)"
+          :title="d"
           :style="{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 6px',borderRadius:'10px',cursor:'pointer',fontSize:'11px',maxWidth:'180px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',background: d === projectDir ? '#1f6feb' : '#2d2d2d', color: d === projectDir ? '#fff' : '#aaa'}">
           {{ d }}
           <span @click.stop="removeProject(d)" style="color:inherit;opacity:.7;">×</span>
@@ -1293,7 +1235,7 @@ export default {
         <span style="font-size:10px;color:#666;">安装 → 跑 5 阶段 → 看产物</span>
       </div>
 
-    <!-- 状态区 -->
+    <!-- ② 逆向分析：工作区 + 分析进度 -->
     <div v-if="projectDir" style="border-bottom:1px solid #333;flex-shrink:0;">
       <div style="padding:0 10px;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
         <span style="font-size:11px;color:#aaa;">2.1 工作区</span>
@@ -1303,6 +1245,27 @@ export default {
         <span style="flex:1;"></span>
         <button @click="refresh" :disabled="busy" title="刷新"
           style="padding:3px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">刷新</button>
+      </div>
+      <!-- 操作按钮：开始逆向（两个入口）+ 安装/卸载 -->
+      <div style="padding:0 10px 8px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button @click="handleNewAgent()" :disabled="busy"
+          title="创建新 Agent 执行规格逆向分析（推荐）"
+          style="padding:5px 12px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+          🚀 开始逆向（新建 Agent）
+        </button>
+        <button @click="handleInCurrentAgent()" :disabled="busy"
+          title="把逆向分析提示词发送给当前 Agent 执行"
+          style="padding:5px 12px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:12px;">
+          在当前 Agent 中执行
+        </button>
+        <button v-if="!installed" @click="doInstall" :disabled="busy || loading"
+          style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+          {{ busy ? '安装中…' : '安装 Reversa' }}
+        </button>
+        <button v-if="installed" @click="doUninstall" :disabled="busy || loading"
+          style="padding:5px 12px;background:#da3633;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+          {{ busy ? '卸载中…' : '卸载' }}
+        </button>
       </div>
       <!-- 阶段进度条 -->
       <div v-if="installed" style="padding:0 10px;font-size:11px;color:#aaa;margin-bottom:4px;">2.2 分析进度</div>
@@ -1317,23 +1280,8 @@ export default {
           {{ p.state === 'done' ? '✓' : (p.state === 'current' ? '▶' : '○') }} {{ p.label }}
         </span>
       </div>
-      <div v-if="installed" style="padding:0 10px;font-size:11px;color:#888;margin-bottom:6px;">
+      <div v-if="installed" style="padding:0 10px 8px;font-size:11px;color:#888;">
         项目：{{ status.project }} · 语言：{{ status.chat_language }} · 输出：{{ status.output_folder }}
-      </div>
-      <!-- 操作按钮 -->
-      <div style="padding:0 10px 8px;display:flex;gap:6px;flex-wrap:wrap;">
-        <button v-if="!installed" @click="doInstall" :disabled="busy || loading"
-          style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
-          {{ busy ? '安装中…' : '安装 Reversa' }}
-        </button>
-        <button v-if="installed" @click="doUninstall" :disabled="busy || loading"
-          style="padding:5px 12px;background:#da3633;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
-          {{ busy ? '卸载中…' : '卸载' }}
-        </button>
-        <button @click="doExportRules" :disabled="exportBusy || !installed"
-          style="padding:5px 12px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
-          {{ exportBusy ? '导出中…' : '导出 Rules' }}
-        </button>
       </div>
     </div>
     <!-- 依赖图 -->
@@ -1549,15 +1497,6 @@ export default {
     <!-- 消息/错误 -->
     <div v-if="message" style="padding:4px 10px;background:#1f3d2b;color:#3fb950;font-size:11px;flex-shrink:0;">{{ message }}</div>
     <div v-if="error" style="padding:4px 10px;background:#3d1f1f;color:#f85149;font-size:11px;flex-shrink:0;">{{ error }}</div>
-    <!-- 项目目录右键菜单 -->
-    <div v-if="menuVisible" :style="menuStyle"
-      style="position:fixed;z-index:9999;background:#2d2d30;border:1px solid #454545;border-radius:6px;box-shadow:0 4px 12px #0008;padding:4px;min-width:200px;">
-      <div style="padding:4px 10px;font-size:11px;color:#888;border-bottom:1px solid #333;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;" :title="menuDir">{{ menuDir }}</div>
-      <div @click="handleNewAgent(menuDir)"
-        style="padding:6px 10px;font-size:12px;color:#ddd;cursor:pointer;border-radius:4px;white-space:nowrap;">创建 Agent 执行规格逆向分析</div>
-      <div @click="handleInCurrentAgent(menuDir)"
-        style="padding:6px 10px;font-size:12px;color:#ddd;cursor:pointer;border-radius:4px;white-space:nowrap;">在当前 Agent 中执行</div>
-    </div>
     <!-- 帮助弹层 -->
     <div v-if="helpVisible" @click.self="helpVisible = false"
       style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;">
@@ -1569,7 +1508,7 @@ export default {
           <ol style="padding-left:18px;margin:4px 0;">
             <li>「① 项目」→ 添加项目目录（需为已存在目录）</li>
             <li>「② 逆向分析」→ 点「安装 Reversa」（Agent 也会自动装）</li>
-            <li>在项目目录上<b>右键/长按</b> → 选「创建 Agent 执行规格逆向分析」开始逆向，等 5 阶段跑完</li>
+            <li>「② 逆向分析」→ 点「🚀 开始逆向（新建 Agent）」开始逆向，等 5 阶段跑完</li>
             <li>「② 逆向分析」→ 可选：添加「现存资料库」参考、浏览「规格产物」并「导出 Rules」</li>
             <li>「③ 正向开发」→ 新建/编辑 NLSpec（LLM 澄清四要素），一键「开启」跑黑灯工厂流水线</li>
             <li>「④ 知识回流」→ 记录基线、分析差异，保持文档与代码同步</li>
