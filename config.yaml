@@ -51,13 +51,13 @@ replace_map:
         Interfaces/Non-goals）中缺失、模糊或自相矛盾的部分，形成问题清单。
       - **必须**：逐条向用户提问（一次问清一批，不要挤牙膏），把用户回答整理进
         NLSpec，更新后再复验，直到四要素完整、无模糊项。
-      - **必须**：把澄清过程与最终 NLSpec 落盘到 .df/clarification.md 留痕。
+      - **必须**：把澄清过程与最终 NLSpec 落盘到 .jarvis/.df/clarification.md 留痕。
       - **禁止**：四要素未齐、仍有模糊项时就开始实现；用启发式工具代替追问。
       ## 你必须执行的操作
       1. 通读需求，对照四要素诊断缺口（缺哪个要素、哪里模糊、哪里矛盾）。
       2. 向用户逐条提问补齐缺口；用户回答后更新 NLSpec。
       3. 复验四要素完整、约束显式、接口精确、Non-goals 明确后，把最终 NLSpec
-        与澄清问答写入 .df/clarification.md。
+        与澄清问答写入 .jarvis/.df/clarification.md。
       4. 确认无歧义后，引导进入 <dark-factory/run> 开始开发。
     description: 澄清需求直到 NLSpec 清晰可开工
   dark-factory/run:
@@ -79,7 +79,7 @@ replace_map:
       2. 与用户讨论，动态生成编排文件（含 agents + flow，参考插件自带
         orchestration/dark_factory_pipeline.yaml 模板），把 NLSpec 内容写入
         编排文件顶层 spec 字段（引擎据此注入各阶段 Agent 背景），落盘到
-        .df/pipeline.yaml，用户确认编排文件无误。
+        .jarvis/.df/pipeline.yaml，用户确认编排文件无误。
       3. 调用 pipeline_runner 工具，参数：
          - orchestration_file=<动态生成的编排文件路径>
          - working_dir=<工作目录>
@@ -110,7 +110,7 @@ replace_map:
       3. 与用户讨论，动态生成编排文件（agents + flow，参考
         orchestration/dark_factory_pipeline.yaml 模板），把 NLSpec 内容写入
         编排文件顶层 spec 字段（引擎据此注入各阶段 Agent 背景），落盘
-        .df/pipeline.yaml，用户确认无误。
+        .jarvis/.df/pipeline.yaml，用户确认无误。
       4. 调用 pipeline_runner 工具按 flow 顺序驱动六阶段流水线：
         planner 规划 → holdout 生成隐藏验收场景 → generator 写码（先写测试）
         → validator 用 holdout 评估（隔离）→ regression 跑既有测试防回归
@@ -140,7 +140,7 @@ replace_map:
       3. 与用户讨论，动态生成编排文件（agents + flow，参考
         orchestration/dark_factory_pipeline.yaml 模板），把 NLSpec 内容写入
         编排文件顶层 spec 字段（引擎据此注入各阶段 Agent 背景），落盘
-        .df/pipeline.yaml，用户确认无误。
+        .jarvis/.df/pipeline.yaml，用户确认无误。
       4. 调用 pipeline_runner 工具按 flow 顺序驱动六阶段流水线：
         规划 → 生成隐藏场景 → 生成（补齐缺失实现/测试）→ 验证 → 回归 → 门禁（gate 停住）。
       5. 产出审批报告交人工确认；通过后如需合并，用 `gh pr merge <number>`（先与用户确认）。

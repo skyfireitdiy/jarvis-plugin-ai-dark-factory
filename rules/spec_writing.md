@@ -42,7 +42,7 @@ NLSpec（Natural Language Spec，自然语言规格）是 AI 黑灯工厂流水�
 - 通读需求，对照四要素诊断缺口（缺哪个要素、哪里模糊、哪里自相矛盾），形成问题清单。
 - 逐条向用户提问（一次问清一批，不要挤牙膏），把回答整理进 NLSpec，更新后再复验。
 - 四要素完整、约束显式、接口精确、Non-goals 明确之前，不进入流水线。
-- 澄清过程与最终 NLSpec 可落盘 `.df/clarification.md` 留痕。
+- 澄清过程与最终 NLSpec 可落盘 `.jarvis/.df/clarification.md` 留痕。
 
 ## 与工具配合
 
