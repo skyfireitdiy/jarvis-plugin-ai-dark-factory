@@ -881,6 +881,30 @@ export default {
       if (!name) return;
       this.runClarifyAgent(name, true);
     },
+    // 在宿主编译器中打开 NLSpec 文件（.jarvis/.df/specs/<name>）
+    async openNlspecInEditor(name) {
+      if (!this.projectDir || !name) return;
+      const openFile =
+        typeof window !== "undefined" && window.__jarvisOpenFile;
+      if (typeof openFile !== "function") {
+        this.error = "宿主未提供编辑器打开通道（__jarvisOpenFile）";
+        return;
+      }
+      const relPath = ".jarvis/.df/specs/" + name;
+      try {
+        const res = await openFile(relPath, {
+          nodeId: this.nodeId,
+          workingDir: this.projectDir,
+        });
+        if (res && res.success) {
+          this.message = `已在编辑器中打开 ${relPath}`;
+        } else {
+          this.error = (res && res.error) || "在编辑器中打开失败";
+        }
+      } catch (e) {
+        this.error = (e && e.message) || "在编辑器中打开失败";
+      }
+    },
     // 基于该 NLSpec 开启黑灯工厂流程（<dark-factory/run>，读固定 spec）
     async openNlspecPipeline(name) {
       if (!this.projectDir || !name) return;
@@ -1769,6 +1793,8 @@ export default {
           <span v-if="missingElements(s).length" :title="'缺少：' + missingElements(s).map(e => '## ' + e).join('、')"
             style="color:#d29922;cursor:default;font-size:10px;">⚠ 缺 {{ missingElements(s).length }} 要素</span>
           <span v-else style="color:#3fb950;font-size:10px;">✓ 完整</span>
+          <button @click="openNlspecInEditor(s.name)" :disabled="nlspecBusy" title="在编辑器中打开该 NLSpec 文件"
+            style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">打开</button>
           <button @click="editNlspec(s.name)" :disabled="nlspecBusy" title="编辑（创建 Agent 跑澄清补齐四要素）"
             style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">编辑</button>
           <button @click="openNlspecPipeline(s.name)" :disabled="nlspecBusy || missingElements(s).length > 0"
