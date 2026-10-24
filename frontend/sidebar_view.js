@@ -184,6 +184,10 @@ export default {
       refInput: "",
       refType: "doc",
       refBusy: false,
+      // NLSpec 管理（issue #14）：固定目录 .jarvis/.df/specs/
+      nlspecs: [], // [{name, title, updated_at, size, elements: {goal,constraints,interfaces,nongoals}}]
+      nlspecLoading: false,
+      nlspecBusy: false,
       // 知识回流（sync）
       syncStatus: null, // {has_baseline, base_commit, head_commit, stale, changed_artifacts, ...}
       syncBusy: false,
@@ -352,6 +356,7 @@ export default {
       this.projectDir = active || "";
       this.projectInput = this.projectDir;
       this.restoreRefs();
+      this.scanNlspecs();
     },
     persistDirs() {
       localStorage.setItem(dirsKey(this.nodeId), JSON.stringify(this.dirs));
@@ -469,6 +474,7 @@ export default {
       this.persistDirs();
       this.error = "";
       this.restoreRefs();
+      this.scanNlspecs();
       this.refresh();
     },
     selectProject(dir) {
@@ -476,6 +482,7 @@ export default {
       this.projectInput = dir;
       this.persistDirs();
       this.restoreRefs();
+      this.scanNlspecs();
       this.refresh();
     },
     removeProject(dir) {
@@ -487,6 +494,7 @@ export default {
       }
       this.persistDirs();
       this.restoreRefs();
+      this.nlspecs = [];
       this.refresh();
     },
     // ---- 项目目录右键菜单 ----
@@ -638,6 +646,170 @@ export default {
         this.message = "失败: " + String((e && e.message) || e);
       } finally {
         this.busy = false;
+      }
+    },
+    // ---- NLSpec 管理（issue #14）----
+    // 四要素标准标题（spec_writing 规范）
+    NLSPEC_ELEMENTS: ["Goal", "Constraints", "Interfaces", "Non-goals"],
+    // 扫描 .jarvis/.df/specs/ 下的 NLSpec，并逐个解析四要素完整性
+    async scanNlspecs() {
+      if (!this.projectDir || this.nlspecLoading) return;
+      this.nlspecLoading = true;
+      this.nlspecError = "";
+      try {
+        const payload = await callFunction("list_nlspecs", { project_dir: this.projectDir }, this.nodeId);
+        const list = (payload.data && payload.data.specs) || [];
+        const specs = [];
+        for (const item of list) {
+          try {
+            const detail = await callFunction("get_nlspec", { project_dir: this.projectDir, name: item.name }, this.nodeId);
+            const content = (detail.data && detail.data.content) || "";
+            specs.push(Object.assign({}, item, { elements: this.parseNlspecElements(content) }));
+          } catch (e) {
+            specs.push(Object.assign({}, item, { elements: {} }));
+          }
+        }
+        this.nlspecs = specs;
+      } catch (e) {
+        this.nlspecError = String((e && e.message) || e);
+        this.nlspecs = [];
+      } finally {
+        this.nlspecLoading = false;
+      }
+    },
+    // 客观解析 spec 内容中的四要素小节标题（缺失即视为不完整）
+    parseNlspecElements(content) {
+      const found = {};
+      (this.NLSPEC_ELEMENTS || []).forEach((el) => {
+        const re = new RegExp("^#{1,3}\\s+" + el + "\\s*$", "im");
+        found[el] = re.test(content || "");
+      });
+      return found;
+    },
+    // 缺失的四要素列表（用于模板标红提示）
+    missingElements(s) {
+      const els = (this.NLSPEC_ELEMENTS || []).filter((el) => !(s && s.elements && s.elements[el]));
+      return els;
+    },
+    // 创建 Agent 跑澄清流程（新建=空/草稿起步，编辑=以现有 spec 为输入补齐）
+    async runClarifyAgent(name, isEdit) {
+      if (!this.projectDir) return;
+      const openModal =
+        typeof window !== "undefined" && window.__jarvisOpenCreateAgentModal;
+      const create =
+        typeof window !== "undefined" && window.__jarvisCreateAgentForTask;
+      if (typeof openModal !== "function" && typeof create !== "function") {
+        this.message = "宿主未提供创建通道，无法创建 Agent";
+        return;
+      }
+      this.nlspecBusy = true;
+      const lines = [
+        `请对项目 ${this.projectDir} 执行 NLSpec 澄清（<dark-factory/clarify> 流程）。`,
+        "",
+        "遵循 spec_writing 规则（可 load_rule 加载）识别 NLSpec 四要素（Goal/Constraints/Interfaces/Non-goals）中缺失、模糊或自相矛盾的部分，",
+        "逐条向用户提问补齐，直到四要素完整、无模糊项。",
+      ];
+      if (isEdit) {
+        lines.push(
+          "",
+          `现有 NLSpec 文件：.jarvis/.df/specs/${name}.md（用 read_code 读取，以其为输入补齐缺口并更新）。`,
+        );
+      }
+      lines.push(
+        "",
+        isEdit
+          ? `最终把完整 NLSpec 落盘到固定 spec 目录 .jarvis/.df/specs/${name}.md（澄清问答可一并留痕）。`
+          : "最终把完整 NLSpec 落盘到固定 spec 目录 .jarvis/.df/specs/<功能名>.md（先与用户确认功能名，每功能一个 spec，澄清问答可一并留痕）。",
+        "四要素完整后，引导进入 <dark-factory/run> 开始开发。",
+      );
+      const prefill = {
+        workingDir: this.projectDir,
+        task: lines.join("\n"),
+        name: isEdit ? `NLSpec 澄清（${name}）` : "NLSpec 澄清（新建）",
+        nodeId: this.nodeId,
+      };
+      try {
+        if (typeof openModal === "function") {
+          const res = await openModal(prefill);
+          if (res && res.confirmed) {
+            this.message = isEdit
+              ? `已创建 Agent 澄清 ${name} 的 NLSpec`
+              : "已创建 Agent 澄清新建 NLSpec";
+          } else {
+            this.message = "已取消";
+          }
+        } else {
+          const res = await create(prefill);
+          if (res && res.success) {
+            this.message = isEdit
+              ? `已创建 Agent 澄清 ${name} 的 NLSpec`
+              : "已创建 Agent 澄清新建 NLSpec";
+          } else {
+            this.message = "失败: " + ((res && res.error) || "创建失败");
+          }
+        }
+      } catch (e) {
+        this.message = "失败: " + String((e && e.message) || e);
+      } finally {
+        this.nlspecBusy = false;
+      }
+    },
+    // 新建 NLSpec：创建 Agent 跑澄清流程（从空/草稿起步）
+    newNlspec() {
+      this.runClarifyAgent("", false);
+    },
+    // 编辑 NLSpec：创建 Agent 以现有 spec 为输入跑澄清补齐四要素
+    editNlspec(name) {
+      if (!name) return;
+      this.runClarifyAgent(name, true);
+    },
+    // 基于该 NLSpec 开启黑灯工厂流程（<dark-factory/run>，读固定 spec）
+    async openNlspecPipeline(name) {
+      if (!this.projectDir || !name) return;
+      const openModal =
+        typeof window !== "undefined" && window.__jarvisOpenCreateAgentModal;
+      const create =
+        typeof window !== "undefined" && window.__jarvisCreateAgentForTask;
+      if (typeof openModal !== "function" && typeof create !== "function") {
+        this.message = "宿主未提供创建通道，无法创建 Agent";
+        return;
+      }
+      this.nlspecBusy = true;
+      const specPath = ".jarvis/.df/specs/" + name + ".md";
+      const task = [
+        `请基于 NLSpec 对项目 ${this.projectDir} 执行黑灯工厂流水线（<dark-factory/run>）。`,
+        "",
+        `先 read_code 读取固定 NLSpec 文件 ${specPath}，四要素不齐或模糊时先向用户澄清补齐。`,
+        "再与用户讨论动态生成编排文件（参考 orchestration/dark_factory_pipeline.yaml 模板），",
+        "把 NLSpec 内容写入编排文件顶层 spec 字段，落盘到 .jarvis/.df/pipeline.yaml，用户确认后",
+        "用 pipeline_runner 工具驱动流水线（approve=false，门禁停住交人工审批）。",
+      ].join("\n");
+      const prefill = {
+        workingDir: this.projectDir,
+        task: task,
+        name: `黑灯工厂（${name}）`,
+        nodeId: this.nodeId,
+      };
+      try {
+        if (typeof openModal === "function") {
+          const res = await openModal(prefill);
+          if (res && res.confirmed) {
+            this.message = `已创建 Agent 基于 ${name} 开启黑灯工厂流程`;
+          } else {
+            this.message = "已取消";
+          }
+        } else {
+          const res = await create(prefill);
+          if (res && res.success) {
+            this.message = `已创建 Agent 基于 ${name} 开启黑灯工厂流程`;
+          } else {
+            this.message = "失败: " + ((res && res.error) || "创建失败");
+          }
+        }
+      } catch (e) {
+        this.message = "失败: " + String((e && e.message) || e);
+      } finally {
+        this.nlspecBusy = false;
       }
     },
     // ---- 状态 ----
@@ -1100,6 +1272,35 @@ export default {
           {{ r.type === 'web' ? r.value : baseName(r.value) }}
           <span @click="removeRef(idx)" style="cursor:pointer;opacity:.7;" title="移除资料">×</span>
         </span>
+      </div>
+    </div>
+
+    <!-- NLSpec 管理（issue #14）：固定目录 .jarvis/.df/specs/ -->
+    <div v-if="projectDir" style="padding:8px 10px;border-bottom:1px solid #333;flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+        <span style="font-size:11px;color:#888;">NLSpec 管理 <span style="color:#666;">（.jarvis/.df/specs/）</span></span>
+        <span style="flex:1;"></span>
+        <button @click="scanNlspecs" :disabled="nlspecLoading" title="重新扫描工作区 NLSpec"
+          style="padding:3px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">扫描</button>
+        <button @click="newNlspec" :disabled="nlspecBusy" title="新建 NLSpec（创建 Agent 跑澄清流程）"
+          style="padding:3px 8px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">新建</button>
+      </div>
+      <div v-if="nlspecLoading" style="color:#888;font-size:11px;">扫描中…</div>
+      <div v-else-if="!nlspecs.length" style="color:#666;font-size:11px;">未发现 NLSpec，点击「新建」创建</div>
+      <div v-else style="display:flex;flex-direction:column;gap:4px;">
+        <div v-for="s in nlspecs" :key="s.name"
+          style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:#1e1e1e;border:1px solid #333;border-radius:4px;font-size:11px;">
+          <span style="flex:1;min-width:0;overflow:hidden;textOverflow:ellipsis;whiteSpace:nowrap;color:#ddd;" :title="s.name">
+            {{ s.title || s.name }}
+          </span>
+          <span v-if="missingElements(s).length" :title="'缺少：' + missingElements(s).map(e => '## ' + e).join('、')"
+            style="color:#d29922;cursor:default;font-size:10px;">⚠ 缺 {{ missingElements(s).length }} 要素</span>
+          <span v-else style="color:#3fb950;font-size:10px;">✓ 完整</span>
+          <button @click="editNlspec(s.name)" :disabled="nlspecBusy" title="编辑（创建 Agent 跑澄清补齐四要素）"
+            style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">编辑</button>
+          <button @click="openNlspecPipeline(s.name)" :disabled="nlspecBusy" title="基于该 NLSpec 开启黑灯工厂流程"
+            style="padding:2px 6px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">开启</button>
+        </div>
       </div>
     </div>
 

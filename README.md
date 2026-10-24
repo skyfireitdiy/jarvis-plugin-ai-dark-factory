@@ -19,6 +19,7 @@
 | ⌨️ 指令模板 | `replace_map` 提供 `<dark-factory/clarify>`（需求澄清）/ `<dark-factory/run>` / `<dark-factory/issue>` / `<dark-factory/pr>` 四种工作流模板 |
 | 🖥️ 前端视图 | 侧边栏 Reversa 逆向工程视图：生命周期管理、产物浏览、依赖图、知识回流手动触发 |
 | 📂 现存资料库 | 为项目添加文档/网页/目录参考资料，反构时注入任务提示词作补充输入（仅进提示词，不落盘到项目） |
+| 📝 NLSpec 管理 | 侧边栏扫描 `.jarvis/.df/specs/` 固定目录的 NLSpec，客观校验 Goal/Constraints/Interfaces/Non-goals 四要素缺口，新建/编辑走 LLM 澄清，一键开启黑灯工厂流水线 |
 
 ## 安装
 
@@ -59,6 +60,7 @@ jarvis --list-plugins   # 确认 ai-dark-factory 插件已注册
 ### 4. 侧边栏视图
 安装后侧边栏出现「Reversa 逆向工程」视图，可管理逆向生命周期、浏览产物、查看依赖图、手动触发知识回流。
 在「现存资料库」区块可为当前项目添加文档/网页/目录参考资料（仅存于浏览器 localStorage，按节点+项目隔离），反构时这些资料会注入任务提示词供 Agent 参考。
+在「NLSpec 管理」区块可扫描当前项目 `.jarvis/.df/specs/` 固定目录下的 NLSpec（每功能一个 `<功能名>.md`），客观校验四要素（Goal/Constraints/Interfaces/Non-goals）小节标题是否齐全并提示缺口；「新建/编辑」会创建 Agent 跑 `<dark-factory/clarify>` 澄清流程（编辑以现有 spec 为输入补齐缺口），「开启」会创建 Agent 基于该 spec 跑 `<dark-factory/run>` 黑灯工厂流水线。
 
 ## 插件结构
 ```
