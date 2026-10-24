@@ -392,6 +392,42 @@ def test_analyze_sync_diff_up_to_date(tmp_path):
     assert r["data"]["changed_files"] == []
 
 
+def test_get_sync_status_baseline_pending(tmp_path):
+    """无基线但有产物且是 git 仓库 → baseline_pending=True（可自动补录）。"""
+    proj = _make_git_project(tmp_path)
+    r = api.get_sync_status(proj)
+    assert r["success"] is True
+    d = r["data"]
+    assert d["has_baseline"] is False
+    assert d["baseline_pending"] is True
+
+
+def test_get_sync_status_baseline_pending_no_artifacts(tmp_path):
+    """无基线且无产物 → baseline_pending=False（无需补录）。"""
+    import subprocess
+
+    proj = tmp_path / "emptyproj"
+    proj.mkdir()
+    subprocess.run(["git", "init", "-q", str(proj)], check=True)
+    subprocess.run(
+        ["git", "-C", str(proj), "config", "user.email", "test@example.com"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(proj), "config", "user.name", "Test"], check=True
+    )
+    (proj / "src").mkdir()
+    (proj / "src" / "main.py").write_text("print(1)\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(proj), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(proj), "commit", "-q", "-m", "init"], check=True
+    )
+    r = api.get_sync_status(str(proj))
+    assert r["success"] is True
+    d = r["data"]
+    assert d["has_baseline"] is False
+    assert d["baseline_pending"] is False
+
+
 # ---------------------------------------------------------------------------
 # NLSpec 管理（issue #14）：固定位置 .jarvis/.df/specs/
 # ---------------------------------------------------------------------------

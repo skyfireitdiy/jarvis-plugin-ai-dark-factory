@@ -938,6 +938,7 @@ export default {
           await this.loadStatus();
           await this.loadArtifacts();
           await this.loadSyncStatus();
+          await this.ensureBaseline();
         } else {
           this.status = null;
           this.artifacts = [];
@@ -950,13 +951,21 @@ export default {
         this.status = null;
       } finally {
         this.loading = false;
+        this._prevAnalysisDone = !!this.analysisDone;
       }
     },
     // 轮询：静默刷新状态（不打断用户操作）
     async pollStatus() {
       if (!this.projectDir || this.busy || this.loading) return;
+      const prevDone = !!this._prevAnalysisDone;
       try {
         await this.loadStatus();
+        // 逆向分析刚完成（5 阶段跑完）→ 自动补录知识回流基线
+        if (this.analysisDone && !prevDone) {
+          await this.loadSyncStatus();
+          await this.ensureBaseline();
+        }
+        this._prevAnalysisDone = !!this.analysisDone;
       } catch (e) {
         // 轮询失败静默（断线重连：下次轮询自动恢复）
       }
@@ -1366,6 +1375,22 @@ export default {
         this.error = e.message || "分析差异失败";
       } finally {
         this.syncBusy = false;
+      }
+    },
+    // 自动补录知识回流基线：产物已生成且是 git 仓库但尚无基线时静默记录（无需用户手动点）
+    async ensureBaseline() {
+      if (!this.projectDir || !this.installed) return;
+      if (!(this.syncStatus && this.syncStatus.baseline_pending)) return;
+      if (!this.hasArtifacts || !this.isGitRepo) return;
+      try {
+        await callFunction(
+          "record_sync_baseline",
+          { project_dir: this.projectDir },
+          this.nodeId,
+        );
+        await this.loadSyncStatus();
+      } catch (e) {
+        // 自动补录失败静默，保留手动「记录基线」按钮兜底
       }
     },
   },
