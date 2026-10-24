@@ -232,6 +232,14 @@ export default {
       if (!c || c.path !== this.projectDir) return true;
       return !!c.is_git;
     },
+    // 宿主是否提供创建 Agent 的通道（新建/编辑 NLSpec、开启流水线均依赖；无 window 时按可用处理）
+    hasCreateChannel() {
+      if (typeof window === "undefined") return true;
+      return (
+        typeof window.__jarvisOpenCreateAgentModal === "function" ||
+        typeof window.__jarvisCreateAgentForTask === "function"
+      );
+    },
     // 逆向分析是否已全部完成（5 阶段）
     analysisDone() {
       if (!this.installed) return false;
@@ -1745,9 +1753,9 @@ export default {
         <span style="flex:1;"></span>
         <button @click="scanNlspecs" :disabled="nlspecLoading" title="重新扫描工作区 NLSpec"
           style="padding:3px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">扫描</button>
-        <button @click="newNlspec" :disabled="nlspecBusy || !projectReady"
-          :title="projectReady ? '新建 NLSpec（创建 Agent 跑澄清流程）' : (projectBlockReason || '项目目录不可用')"
-          :style="{padding:'3px 8px',background: (nlspecBusy || !projectReady) ? '#2d2d2d' : '#1f6feb', color: (nlspecBusy || !projectReady) ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || !projectReady) ? 'not-allowed' : 'pointer', fontSize:'11px'}">新建</button>
+        <button @click="newNlspec" :disabled="nlspecBusy || !projectReady || !hasCreateChannel"
+          :title="!hasCreateChannel ? '宿主未提供创建 Agent 的通道，无法新建 NLSpec' : (projectReady ? '新建 NLSpec（创建 Agent 跑澄清流程）' : (projectBlockReason || '项目目录不可用'))"
+          :style="{padding:'3px 8px',background: (nlspecBusy || !projectReady || !hasCreateChannel) ? '#2d2d2d' : '#1f6feb', color: (nlspecBusy || !projectReady || !hasCreateChannel) ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || !projectReady || !hasCreateChannel) ? 'not-allowed' : 'pointer', fontSize:'11px'}">新建</button>
       </div>
       <div style="font-size:10px;color:#666;margin-bottom:4px;">NLSpec 存放于 .jarvis/.df/specs/</div>
       <div v-if="nlspecLoading" style="color:#888;font-size:11px;">扫描中…</div>
