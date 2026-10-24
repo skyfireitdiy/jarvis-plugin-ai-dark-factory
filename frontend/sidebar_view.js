@@ -451,7 +451,8 @@ export default {
         }
         // 目录选择带节点时，同步切换目标节点（该目录所在节点）
         if (picked.nodeId) {
-          this.onNodeChange(picked.nodeId);
+          this.nodeId = picked.nodeId;
+          this.onNodeChange();
         }
         this.projectInput = picked.path;
         this.addProject();
@@ -712,13 +713,13 @@ export default {
       if (isEdit) {
         lines.push(
           "",
-          `现有 NLSpec 文件：.jarvis/.df/specs/${name}.md（用 read_code 读取，以其为输入补齐缺口并更新）。`,
+          `现有 NLSpec 文件：.jarvis/.df/specs/${name}（用 read_code 读取，以其为输入补齐缺口并更新）。`,
         );
       }
       lines.push(
         "",
         isEdit
-          ? `最终把完整 NLSpec 落盘到固定 spec 目录 .jarvis/.df/specs/${name}.md（澄清问答可一并留痕）。`
+          ? `最终把完整 NLSpec 落盘到固定 spec 目录 .jarvis/.df/specs/${name}（澄清问答可一并留痕）。`
           : "最终把完整 NLSpec 落盘到固定 spec 目录 .jarvis/.df/specs/<功能名>.md（先与用户确认功能名，每功能一个 spec，澄清问答可一并留痕）。",
         "四要素完整后，引导进入 <dark-factory/run> 开始开发。",
       );
@@ -775,7 +776,7 @@ export default {
         return;
       }
       this.nlspecBusy = true;
-      const specPath = ".jarvis/.df/specs/" + name + ".md";
+      const specPath = ".jarvis/.df/specs/" + name;
       const task = [
         `请基于 NLSpec 对项目 ${this.projectDir} 执行黑灯工厂流水线（<dark-factory/run>）。`,
         "",
@@ -1181,6 +1182,16 @@ export default {
         <span style="font-size:10px;color:#666;">{{ guideVisible ? '点击收起' : '点击展开' }}</span>
       </div>
       <div v-if="guideVisible" style="margin-top:6px;">
+        <!-- 快速上手：照着点即可走通全流程（区块名 + 按钮名） -->
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;line-height:1.8;color:#c9d1d9;">
+          <div style="font-weight:bold;color:#79c0ff;margin-bottom:2px;">🚀 快速上手（照着点）</div>
+          <div><b>1.</b> 顶部「项目目录」→ 输入目录或点「选择目录」，再点「添加」</div>
+          <div><b>2.</b> 可选：对遗留项目逆向，「状态」区点「安装 Reversa」（纯新项目开发可跳过）</div>
+          <div><b>3.</b> 可选：「现存资料库」→ 添加文档/网页/目录作参考</div>
+          <div><b>4.</b> 「NLSpec 管理」→ 点「新建」让 Agent 澄清需求（或已有 spec 直接点「开启」）</div>
+          <div><b>5.</b> 流水线跑完即完成——末尾「知识回流」会自动记录基线并同步文档</div>
+          <div style="color:#8b949e;margin-top:2px;">详细原理见下方闭环图与各区块说明。</div>
+        </div>
         <!-- 闭环图：逆向分析 → 正向开发 → 知识回流 -->
         <svg viewBox="0 0 376 150" width="100%" style="display:block;max-width:100%;height:auto;background:#0d1117;border:1px solid #30363d;border-radius:6px;">
           <!-- 三条主流程节点（明细文字内嵌节点，避免互相重叠） -->
@@ -1511,13 +1522,14 @@ export default {
       <div style="background:#1e1e1e;border:1px solid #444;border-radius:8px;padding:16px;max-width:420px;max-height:80%;overflow:auto;font-size:12px;color:#ddd;">
         <div style="font-weight:bold;font-size:13px;margin-bottom:8px;">🏭 黑灯工厂插件</div>
         <div style="line-height:1.6;">
-          <p><b>用途</b>：对遗留项目执行规格逆向工程，生成结构化 Markdown 规格（_reversa_sdd/），并导出为 Jarvis rule 知识库。</p>
+          <p><b>用途</b>：对遗留项目执行规格逆向工程（Reversa），生成结构化 Markdown 规格（_reversa_sdd/），再基于 NLSpec 驱动黑灯工厂流水线正向开发，最后知识回流保持文档与代码同步，形成「逆向→正向→回流」闭环。</p>
           <p><b>使用步骤</b>：</p>
           <ol style="padding-left:18px;margin:4px 0;">
             <li>添加项目目录（需为已存在目录）</li>
             <li>点击「安装 Reversa」安装工作区（绕过交互式 CLI）</li>
-            <li>由 Jarvis Agent 依据转换后的 rules 编排执行 5 阶段分析</li>
-            <li>浏览产物，按置信度「导出 Rules」复用</li>
+            <li>在「现存资料库」为项目添加文档/网页/目录参考资料（反构时注入提示词）</li>
+            <li>在「NLSpec 管理」新建/编辑 NLSpec（LLM 澄清四要素），一键「开启」跑黑灯工厂流水线</li>
+            <li>浏览产物，按置信度「导出 Rules」复用；用「知识回流」记录基线、分析差异保持文档同步</li>
           </ol>
           <p><b>5 阶段</b>：侦察 → 挖掘 → 解读 → 生成 → 评审</p>
           <p><b>置信度</b>：🟢CONFIRMED 已确认 / 🟡INFERRED 推断 / 🔴GAP 缺口（默认不导出）</p>
