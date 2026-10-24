@@ -794,25 +794,44 @@ export default {
         return;
       }
       this.nlspecBusy = true;
-      const lines = [
-        `请对项目 ${this.projectDir} 执行 NLSpec 澄清（<dark-factory/clarify> 流程）。`,
-        "",
-        "遵循 spec_writing 规则（可 load_rule 加载）识别 NLSpec 四要素（Goal/Constraints/Interfaces/Non-goals）中缺失、模糊或自相矛盾的部分，",
-        "逐条向用户提问补齐，直到四要素完整、无模糊项。",
-      ];
-      if (isEdit) {
-        lines.push(
-          "",
-          `现有 NLSpec 文件：.jarvis/.df/specs/${name}（用 read_code 读取，以其为输入补齐缺口并更新）。`,
-        );
-      }
-      lines.push(
-        "",
-        isEdit
-          ? `最终把完整 NLSpec 落盘到固定 spec 目录 .jarvis/.df/specs/${name}（澄清问答可一并留痕）。`
-          : "最终把完整 NLSpec 落盘到固定 spec 目录 .jarvis/.df/specs/<功能名>.md（先与用户确认功能名，每功能一个 spec，澄清问答可一并留痕）。",
-        "四要素完整后，引导进入 <dark-factory/run> 开始开发。",
-      );
+      // 新建场景：用户此时还没有录入任何需求，spec 文件也不存在。
+      // 提示词必须让 Agent 先向用户收集需求，而不是去读取/假设已有内容。
+      const lines = isEdit
+        ? [
+            `请对项目 ${this.projectDir} 执行 NLSpec 澄清（<dark-factory/clarify> 流程）。`,
+            "",
+            "遵循 spec_writing 规则（可 load_rule 加载）识别 NLSpec 四要素（Goal/Constraints/Interfaces/Non-goals）中缺失、模糊或自相矛盾的部分，",
+            "逐条向用户提问补齐，直到四要素完整、无模糊项。",
+            "",
+            `现有 NLSpec 文件：.jarvis/.df/specs/${name}（用 read_code 读取，以其为输入补齐缺口并更新）。`,
+            "",
+            `最终把完整 NLSpec 落盘到固定 spec 目录 .jarvis/.df/specs/${name}（澄清问答可一并留痕）。`,
+            "四要素完整后，引导进入 <dark-factory/run> 开始开发。",
+          ]
+        : [
+            `请对项目 ${this.projectDir} 执行 NLSpec 澄清（<dark-factory/clarify> 流程），新建一份 NLSpec。`,
+            "",
+            "【当前状态】用户还没有录入任何需求：",
+            "- .jarvis/.df/specs/ 下没有本次要写的 spec 文件，不要去读取或假设已有内容；",
+            "- 你手上没有任何需求描述、目标或约束，只有用户接下来口头/文字告诉你的内容。",
+            "",
+            "【第一步：先向用户收集需求】",
+            "开场先说明「你还没有录入需求」，然后请用户用一两句话描述想做的功能（要解决什么问题、给谁用）。",
+            "若用户只给了模糊方向（例如「加个登录」「优化性能」），先追问澄清，不要自行脑补实现细节。",
+            "",
+            "【第二步：按四要素逐项澄清】",
+            "遵循 spec_writing 规则（可 load_rule 加载），对照 Goal/Constraints/Interfaces/Non-goals 诊断缺口，",
+            "一次问清一批问题（不要挤牙膏），逐条补齐：",
+            "- Goal：要做什么、解决什么问题、如何验收；",
+            "- Constraints：技术栈、性能/安全/兼容性要求、明确不可用的方案；",
+            "- Interfaces：对外契约（函数签名/API 端点/数据结构/错误语义）；",
+            "- Non-goals：明确不做什么。",
+            "",
+            "【第三步：落盘】",
+            "四要素完整、无模糊项后，先与用户确认功能名，再把完整 NLSpec 落盘到固定 spec 目录",
+            ".jarvis/.df/specs/<功能名>.md（每功能一个 spec，澄清问答可一并留痕）。",
+            "用户确认后再引导进入 <dark-factory/run> 开始开发；四要素未齐前不要进入流水线。",
+          ];
       const prefill = {
         workingDir: this.projectDir,
         task: lines.join("\n"),
