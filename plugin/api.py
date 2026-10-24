@@ -42,6 +42,8 @@ _EXPORT_RULES_DIR = os.path.join(".jarvis", "rules", "reversa", "artifacts")
 _DEPS_FILE = os.path.join(".jarvis", "reversa", "deps.json")
 # 知识回流基线记录（与产物同生命周期，卸载保留产物时一并保留）
 _SYNC_FILE = os.path.join(_DEFAULT_OUTPUT_FOLDER, ".reversa-sync.json")
+# Reversa 安装状态文件（记录实际 output_folder 等安装参数）
+_REVERSA_STATE_FILE = os.path.join(".reversa", "state.json")
 # 置信度标记
 _CONFIDENCE_CONFIRMED = "🟢CONFIRMED"
 _CONFIDENCE_INFERRED = "🟡INFERRED"
@@ -67,15 +69,45 @@ def _resolve_project(project_dir: Any) -> tuple:
     return abs_path, ""
 
 
+def _read_state(project_dir: str) -> Dict[str, Any]:
+    """读取项目 .reversa/state.json；不存在/损坏返回空 dict。"""
+    state_path = os.path.join(project_dir, _REVERSA_STATE_FILE)
+    if not os.path.isfile(state_path):
+        return {}
+    try:
+        with open(state_path, "r", encoding="utf-8", errors="replace") as f:
+            parsed = json.load(f)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:  # noqa: BLE001
+        pass
+    return {}
+
+
+def _output_folder(project_dir: str) -> str:
+    """返回项目实际使用的产物目录名（相对项目根）。
+
+    以 .reversa/state.json 的 output_folder 为准（安装时可自定义），
+    未安装/未记录时回退默认 _reversa_sdd。
+    """
+    folder = str(_read_state(project_dir).get("output_folder") or "").strip()
+    if not folder:
+        return _DEFAULT_OUTPUT_FOLDER
+    # 只接受项目内的相对目录，避免 state.json 被篡改后越界
+    if os.path.isabs(folder) or ".." in folder.replace("\\", "/").split("/"):
+        return _DEFAULT_OUTPUT_FOLDER
+    return folder.strip("/\\") or _DEFAULT_OUTPUT_FOLDER
+
+
 def _resolve_artifact_path(project_dir: str, rel_path: Any) -> tuple:
     """校验产物相对路径，防止路径穿越。返回 (abs_path, error)。
 
-    rel_path 必须是 _reversa_sdd/ 下的相对路径，且解析后仍在项目目录内。
+    rel_path 必须是产物目录（默认 _reversa_sdd/）下的相对路径，且解析后仍在项目目录内。
     """
     rel_path = (rel_path or "").strip().lstrip("/\\")
     if not rel_path:
         return "", "未指定产物路径"
-    output_dir = os.path.join(project_dir, _DEFAULT_OUTPUT_FOLDER)
+    output_dir = os.path.join(project_dir, _output_folder(project_dir))
     abs_path = os.path.abspath(os.path.join(output_dir, rel_path))
     if not abs_path.startswith(os.path.abspath(output_dir) + os.sep):
         return "", f"非法路径（越界）: {rel_path}"
@@ -210,7 +242,7 @@ def check_project(project_dir: Optional[str] = None) -> Dict[str, Any]:
                 os.path.join(abs_path, ".reversa", "state.json")
             ),
             "has_output": os.path.isdir(
-                os.path.join(abs_path, _DEFAULT_OUTPUT_FOLDER)
+                os.path.join(abs_path, _output_folder(abs_path))
             ),
         },
     }
@@ -255,12 +287,13 @@ def uninstall_project(
 # 产物浏览
 # ---------------------------------------------------------------------------
 def _walk_output_dir(project_dir: str) -> List[Dict[str, Any]]:
-    """递归列出 _reversa_sdd/ 下的文件树。
+    """递归列出产物目录下的文件树。
 
-    返回 [{path, name, type: "file"|"dir", size, children?}]，按名称排序。
-    目录不存在时返回空列表。
+    返回 [{path, abs_path, name, type: "file"|"dir", size, children?}]，按名称排序。
+    path 为相对产物目录的路径（供 read_artifact 使用），abs_path 为宿主机绝对路径
+    （供前端在编辑器中直接打开，避免前端自行拼接目录）。目录不存在时返回空列表。
     """
-    output_dir = os.path.join(project_dir, _DEFAULT_OUTPUT_FOLDER)
+    output_dir = os.path.join(project_dir, _output_folder(project_dir))
     if not os.path.isdir(output_dir):
         return []
 
@@ -278,6 +311,7 @@ def _walk_output_dir(project_dir: str) -> List[Dict[str, Any]]:
                 entries.append(
                     {
                         "path": rel,
+                        "abs_path": full,
                         "name": name,
                         "type": "dir",
                         "children": children,
@@ -288,24 +322,37 @@ def _walk_output_dir(project_dir: str) -> List[Dict[str, Any]]:
                     size = os.path.getsize(full)
                 except Exception:  # noqa: BLE001
                     size = 0
-                entries.append({"path": rel, "name": name, "type": "file", "size": size})
+                entries.append(
+                    {
+                        "path": rel,
+                        "abs_path": full,
+                        "name": name,
+                        "type": "file",
+                        "size": size,
+                    }
+                )
         return entries
 
     return _walk(output_dir)
 
 
 def list_artifacts(project_dir: Optional[str] = None) -> Dict[str, Any]:
-    """列出 _reversa_sdd/ 产物文件树。
+    """列出产物文件树（目录以 .reversa/state.json 的 output_folder 为准）。
 
-    返回 {"success": True, "data": {output_folder, files: [...]}}。
+    返回 {"success": True, "data": {output_folder, output_dir, files: [...]}}。
     """
     project_dir, err = _resolve_project(project_dir)
     if err:
         return {"success": False, "error": err}
+    folder = _output_folder(project_dir)
     files = _walk_output_dir(project_dir)
     return {
         "success": True,
-        "data": {"output_folder": _DEFAULT_OUTPUT_FOLDER, "files": files},
+        "data": {
+            "output_folder": folder,
+            "output_dir": os.path.join(project_dir, folder),
+            "files": files,
+        },
     }
 
 
@@ -327,10 +374,14 @@ def read_artifact(
             content = f.read()
     except Exception as e:  # noqa: BLE001
         return {"success": False, "error": f"读取产物失败: {e}"}
-    rel_path = os.path.relpath(abs_path, os.path.join(project_dir, _DEFAULT_OUTPUT_FOLDER))
+    rel_path = os.path.relpath(abs_path, os.path.join(project_dir, _output_folder(project_dir)))
     return {
         "success": True,
-        "data": {"path": rel_path.replace(os.sep, "/"), "content": content},
+        "data": {
+            "path": rel_path.replace(os.sep, "/"),
+            "abs_path": abs_path,
+            "content": content,
+        },
     }
 
 
@@ -621,7 +672,7 @@ def export_rules(
     project_dir, err = _resolve_project(project_dir)
     if err:
         return {"success": False, "error": err}
-    output_dir = os.path.join(project_dir, _DEFAULT_OUTPUT_FOLDER)
+    output_dir = os.path.join(project_dir, _output_folder(project_dir))
     if not os.path.isdir(output_dir):
         return {"success": False, "error": f"未找到规格产物目录: {output_dir}（请先运行 Reversa 分析）"}
 
@@ -740,8 +791,8 @@ def _write_sync_meta(project_dir: str, meta: Dict[str, Any]) -> bool:
 
 
 def _walk_md_files(project_dir: str) -> List[str]:
-    """列出 _reversa_sdd/ 下所有 .md 产物相对路径（排序）。"""
-    output_dir = os.path.join(project_dir, _DEFAULT_OUTPUT_FOLDER)
+    """列出产物目录下所有 .md 产物相对路径（排序）。"""
+    output_dir = os.path.join(project_dir, _output_folder(project_dir))
     files: List[str] = []
     if not os.path.isdir(output_dir):
         return files
@@ -773,7 +824,7 @@ def record_sync_baseline(
         return {"success": False, "error": "无法获取 git HEAD（非 git 仓库？）"}
     artifacts: Dict[str, Any] = {}
     for rel in _walk_md_files(project_dir):
-        abs_path = os.path.join(project_dir, _DEFAULT_OUTPUT_FOLDER, rel)
+        abs_path = os.path.join(project_dir, _output_folder(project_dir), rel)
         artifacts[rel] = {
             "commit": head,
             "hash": _sha256_file(abs_path),
@@ -819,11 +870,12 @@ def get_sync_status(project_dir: Optional[str] = None) -> Dict[str, Any]:
         }
     base_commit = str(meta.get("base_commit") or "")
     head_commit = _git_head_commit(project_dir)
-    baseline_artifacts = meta.get("artifacts") if isinstance(meta.get("artifacts"), dict) else {}
+    raw_artifacts = meta.get("artifacts")
+    baseline_artifacts: Dict[str, Any] = raw_artifacts if isinstance(raw_artifacts, dict) else {}
 
     current: Dict[str, str] = {}
     for rel in _walk_md_files(project_dir):
-        abs_path = os.path.join(project_dir, _DEFAULT_OUTPUT_FOLDER, rel)
+        abs_path = os.path.join(project_dir, _output_folder(project_dir), rel)
         current[rel] = _sha256_file(abs_path)
 
     changed: List[str] = []
@@ -928,7 +980,7 @@ def _map_code_to_artifacts(
     """
     affected: List[str] = []
     matrix_path = os.path.join(
-        project_dir, _DEFAULT_OUTPUT_FOLDER, "traceability", "code-spec-matrix.md"
+        project_dir, _output_folder(project_dir), "traceability", "code-spec-matrix.md"
     )
     matrix_lines: List[str] = []
     if os.path.isfile(matrix_path):

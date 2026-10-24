@@ -9,6 +9,7 @@
 import json
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "plugin"))
 
@@ -114,6 +115,56 @@ def test_list_artifacts_tree(tmp_path):
     names = [f["name"] for f in files]
     assert "architecture.md" in names
     assert "sdd" in names
+
+
+def test_list_artifacts_returns_abs_path(tmp_path):
+    """list_artifacts 为每个节点返回宿主机绝对路径，供前端直接打开。"""
+    proj = _make_project(tmp_path)
+    r = api.list_artifacts(proj)
+    assert r["success"] is True
+    assert r["data"]["output_folder"] == "_reversa_sdd"
+    assert r["data"]["output_dir"] == os.path.join(proj, "_reversa_sdd")
+    arch = next(f for f in r["data"]["files"] if f["name"] == "architecture.md")
+    assert arch["abs_path"] == os.path.join(proj, "_reversa_sdd", "architecture.md")
+    assert os.path.isfile(arch["abs_path"])
+
+
+def _write_state(proj, output_folder):
+    """.reversa/state.json 记录安装时的 output_folder。"""
+    state_dir = Path(proj) / ".reversa"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "state.json").write_text(
+        json.dumps({"output_folder": output_folder}), encoding="utf-8"
+    )
+
+
+def test_output_folder_follows_state_json(tmp_path):
+    """产物目录以 state.json 的 output_folder 为准（安装时可自定义）。"""
+    proj = _make_project(tmp_path)
+    custom = os.path.join(proj, "docs", "spec")
+    os.makedirs(custom)
+    with open(os.path.join(custom, "custom.md"), "w", encoding="utf-8") as f:
+        f.write("# Custom\n")
+    _write_state(proj, "docs/spec")
+
+    r = api.list_artifacts(proj)
+    assert r["success"] is True
+    assert r["data"]["output_folder"] == "docs/spec"
+    assert r["data"]["output_dir"] == custom
+    names = [f["name"] for f in r["data"]["files"]]
+    assert names == ["custom.md"]
+
+    r = api.read_artifact(proj, "custom.md")
+    assert r["success"] is True
+    assert r["data"]["abs_path"] == os.path.join(custom, "custom.md")
+
+
+def test_output_folder_rejects_escape(tmp_path):
+    """state.json 的 output_folder 为绝对路径/含 .. 时回退默认目录。"""
+    proj = _make_project(tmp_path)
+    for bad in ("/etc", "../outside"):
+        _write_state(proj, bad)
+        assert api._output_folder(proj) == "_reversa_sdd"
 
 
 def test_read_artifact_and_path_traversal(tmp_path):

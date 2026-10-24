@@ -167,6 +167,7 @@ export default {
       message: "",
       // 产物浏览
       artifacts: [],
+      artifactOutputDir: "", // 产物目录绝对路径（后端按 state.json 的 output_folder 解析）
       artifactOpen: {}, // path -> bool（树展开状态）
       selectedArtifact: null,
       artifactContent: "",
@@ -1035,6 +1036,7 @@ export default {
     async loadArtifacts() {
       const payload = await callFunction("list_artifacts", { project_dir: this.projectDir }, this.nodeId);
       this.artifacts = (payload.data && payload.data.files) || [];
+      this.artifactOutputDir = (payload.data && payload.data.output_dir) || "";
     },
     // 树形展开/收起
     toggleDir(node) {
@@ -1043,13 +1045,24 @@ export default {
     isDirOpen(node) {
       return !!this.artifactOpen[node.path];
     },
+    // 产物绝对路径：优先用后端返回的 abs_path；否则按产物目录 + 相对路径拼接。
+    artifactAbsPath(relPath) {
+      const base = this.artifactOutputDir || this.projectDir;
+      if (!base || !relPath) return "";
+      return `${base.replace(/\/+$/, "")}/${String(relPath).replace(/^\/+/, "")}`;
+    },
     async openArtifact(node) {
       if (node.type !== "file") return;
-      // 优先在宿主编译器中打开（绝对路径 = 项目目录 + 产物相对路径）。
+      // 优先在宿主编译器中打开。绝对路径优先用后端返回的 abs_path
+      // （产物目录以 .reversa/state.json 的 output_folder 为准，前端不自行拼接）。
       // 宿主未提供该通道（旧版本）时回退到侧边栏内嵌预览。
       const openFile = window.__jarvisOpenFile;
       if (typeof openFile === "function") {
-        const absPath = `${this.projectDir.replace(/\/+$/, "")}/${node.path.replace(/^\/+/, "")}`;
+        const absPath = node.abs_path || this.artifactAbsPath(node.path);
+        if (!absPath) {
+          this.error = "无法确定产物绝对路径";
+          return;
+        }
         try {
           const res = await openFile(absPath, { nodeId: this.nodeId, workingDir: this.projectDir });
           if (res && res.success) {
