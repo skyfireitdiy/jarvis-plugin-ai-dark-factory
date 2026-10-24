@@ -1155,10 +1155,11 @@ export default {
           <div style="font-weight:bold;color:#79c0ff;margin-bottom:2px;">🚀 快速上手（照着点）</div>
           <div><b>1.</b> 「① 项目」→ 输入目录或点「选择目录」，再点「添加」</div>
           <div><b>2.</b> 「② 逆向分析」→ 点「安装 Reversa」（Agent 也会自动装，纯新项目可跳过）</div>
-          <div><b>3.</b> 「② 逆向分析」→ 点「🚀 开始逆向（新建 Agent）」，等 5 阶段跑完</div>
-          <div><b>4.</b> 「② 逆向分析」→ 浏览「规格产物」，需要时点「导出 Rules」</div>
-          <div><b>5.</b> 「③ 正向开发」→ 点「新建」让 Agent 澄清需求（或已有 spec 直接点「开启」）</div>
-          <div><b>6.</b> 流水线跑完即完成——「④ 知识回流」会自动记录基线并同步文档</div>
+          <div><b>3.</b> 「② 逆向分析」→ 可选：先在 2.2 加上游依赖、2.3 加现存资料，逆向时会参考</div>
+          <div><b>4.</b> 「② 逆向分析」→ 点「🚀 开始逆向（新建 Agent）」，等 5 阶段跑完</div>
+          <div><b>5.</b> 「② 逆向分析」→ 浏览「规格产物」，需要时点「导出 Rules」</div>
+          <div><b>6.</b> 「③ 正向开发」→ 点「新建」让 Agent 澄清需求（或已有 spec 直接点「开启」）</div>
+          <div><b>7.</b> 流水线跑完即完成——「④ 知识回流」会自动记录基线并同步文档</div>
           <div style="color:#8b949e;margin-top:2px;">详细原理见下方闭环图与各区块说明。</div>
         </div>
         <!-- 闭环图：逆向分析 → 正向开发 → 知识回流 -->
@@ -1235,10 +1236,10 @@ export default {
         <span style="font-size:10px;color:#666;">安装 → 跑 5 阶段 → 看产物</span>
       </div>
 
-    <!-- ② 逆向分析：工作区 + 分析进度 -->
+    <!-- ② 逆向分析：安装状态 + 输入配置 + 执行 + 进度 -->
     <div v-if="projectDir" style="border-bottom:1px solid #333;flex-shrink:0;">
       <div style="padding:0 10px;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-        <span style="font-size:11px;color:#aaa;">2.1 工作区</span>
+        <span style="font-size:11px;color:#aaa;">2.1 工作区状态</span>
         <span v-if="loading" style="color:#888;">加载中…</span>
         <span v-else-if="installed" style="color:#3fb950;">已安装 v{{ status.version }}</span>
         <span v-else style="color:#d29922;">未安装</span>
@@ -1246,83 +1247,11 @@ export default {
         <button @click="refresh" :disabled="busy" title="刷新"
           style="padding:3px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">刷新</button>
       </div>
-      <!-- 操作按钮：开始逆向（两个入口）+ 安装/卸载 -->
-      <div style="padding:0 10px 8px;display:flex;gap:6px;flex-wrap:wrap;">
-        <button @click="handleNewAgent()" :disabled="busy"
-          title="创建新 Agent 执行规格逆向分析（推荐）"
-          style="padding:5px 12px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
-          🚀 开始逆向（新建 Agent）
-        </button>
-        <button @click="handleInCurrentAgent()" :disabled="busy"
-          title="把逆向分析提示词发送给当前 Agent 执行"
-          style="padding:5px 12px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:12px;">
-          在当前 Agent 中执行逆向
-        </button>
-        <button v-if="!installed" @click="doInstall" :disabled="busy || loading"
-          style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
-          {{ busy ? '安装中…' : '安装 Reversa' }}
-        </button>
-        <button v-if="installed" @click="doUninstall" :disabled="busy || loading"
-          style="padding:5px 12px;background:#da3633;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
-          {{ busy ? '卸载中…' : '卸载' }}
-        </button>
-      </div>
-      <!-- 阶段进度条 -->
-      <div v-if="installed" style="padding:0 10px;font-size:11px;color:#aaa;margin-bottom:4px;">2.2 分析进度</div>
-      <div v-if="installed" style="padding:0 10px;display:flex;gap:2px;margin-bottom:6px;">
-        <div v-for="p in phaseList" :key="p.key" :title="p.key"
-          :style="{flex:'1',height:'6px',borderRadius:'3px',background: p.state === 'done' ? '#3fb950' : (p.state === 'current' ? '#1f6feb' : '#333')}">
+      <!-- 2.2 上游依赖（逆向输入：分析时 Agent 会参考上游规格产物） -->
+      <div style="padding:0 10px 8px;">
+        <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.2 上游依赖
+          <span style="color:#666;">（建议先配置：逆向时会参考上游 _reversa_sdd/ 规格）</span>
         </div>
-      </div>
-      <div v-if="installed" style="padding:0 10px;display:flex;gap:6px;font-size:11px;color:#888;margin-bottom:6px;flex-wrap:wrap;">
-        <span v-for="p in phaseList" :key="p.key"
-          :style="{color: p.state === 'done' ? '#3fb950' : (p.state === 'current' ? '#79c0ff' : '#888')}">
-          {{ p.state === 'done' ? '✓' : (p.state === 'current' ? '▶' : '○') }} {{ p.label }}
-        </span>
-      </div>
-      <div v-if="installed" style="padding:0 10px 8px;font-size:11px;color:#888;">
-        项目：{{ status.project }} · 语言：{{ status.chat_language }} · 输出：{{ status.output_folder }}
-      </div>
-    </div>
-    <!-- 依赖图 -->
-    <div style="padding:0 10px 8px;">
-      <div style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-        <span>2.3 依赖图</span>
-        <span style="font-size:10px;color:#666;">（箭头指向被依赖的上游）</span>
-        <span style="flex:1;"></span>
-        <button @click="loadDepsGraph" :disabled="depsLoading" title="刷新依赖图"
-          style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
-          {{ depsLoading ? '加载中…' : '刷新' }}
-        </button>
-      </div>
-      <div v-if="depsLayout" style="overflow:auto;margin-bottom:4px;">
-        <svg :width="depsLayout.width" :height="depsLayout.height" style="display:block;">
-          <!-- 边（箭头指向被依赖方） -->
-          <line v-for="e in depsLayout.edges" :key="e.from + '->' + e.to"
-            :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2"
-            stroke="#7d8590" stroke-width="1.5" marker-end="url(#reversaArrow)"/>
-          <!-- 节点 -->
-          <g v-for="n in depsLayout.nodes" :key="n.path">
-            <rect :x="n.x" :y="n.y" :width="n.w" :height="n.h" rx="6"
-              :fill="n.path === projectDir ? '#1f6feb' : '#2d2d2d'" stroke="#444" stroke-width="1"/>
-            <text :x="n.x + n.w / 2" :y="n.y + n.h / 2" text-anchor="middle" dominant-baseline="central"
-              :fill="n.path === projectDir ? '#fff' : '#ccc'" font-size="11" style="pointer-events:none;">{{ n.label }}</text>
-            <title>{{ n.path }}</title>
-          </g>
-        </svg>
-        <svg width="0" height="0" style="position:absolute;">
-          <defs>
-            <marker id="reversaArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#7d8590"/>
-            </marker>
-          </defs>
-        </svg>
-      </div>
-      <div v-else style="color:#666;font-size:11px;margin-bottom:4px;">
-        {{ depsLoading ? '加载依赖图…' : '暂无依赖（在下方为当前项目添加上游依赖）' }}
-      </div>
-      <!-- 当前项目依赖配置 -->
-      <div>
         <div style="display:flex;gap:4px;margin-bottom:4px;">
           <input v-model="depInput" placeholder="上游依赖目录（如 /path/to/upstream）"
             @keydown.enter.prevent="addDependency"
@@ -1340,38 +1269,80 @@ export default {
           </span>
         </div>
       </div>
-    </div>
-    <!-- 现存资料库（仅注入反构提示词，不落盘到项目） -->
-    <div style="padding:0 10px 8px;">
-      <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.4 现存资料库 <span style="color:#666;">（反构时注入提示词作参考）</span></div>
-      <div style="display:flex;gap:4px;margin-bottom:4px;">
-        <select v-model="refType" title="资料类型"
-          style="padding:3px 4px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:11px;">
-          <option value="doc">文档</option>
-          <option value="web">网页</option>
-          <option value="dir">目录</option>
-        </select>
-        <input v-model="refInput" :placeholder="refType === 'web' ? '网页 URL（如 https://example.com/doc）' : (refType === 'dir' ? '目录路径（如 /path/to/docs）' : '文档路径（如 /path/to/spec.md）')"
-          @keydown.enter.prevent="addRef"
-          style="flex:1;min-width:0;padding:3px 6px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:11px;">
-        <button v-if="refType === 'dir'" @click="pickRefDir" title="用目录选择弹窗挑选资料目录"
-          style="padding:3px 10px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:11px;">选择目录</button>
-        <button @click="addRef" :disabled="refBusy"
-          style="padding:3px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">添加</button>
+      <!-- 2.3 现存资料库（逆向输入：仅注入提示词，不落盘到项目） -->
+      <div style="padding:0 10px 8px;">
+        <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.3 现存资料库
+          <span style="color:#666;">（建议先配置：反构时注入提示词作参考）</span>
+        </div>
+        <div style="display:flex;gap:4px;margin-bottom:4px;">
+          <select v-model="refType" title="资料类型"
+            style="padding:3px 4px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:11px;">
+            <option value="doc">文档</option>
+            <option value="web">网页</option>
+            <option value="dir">目录</option>
+          </select>
+          <input v-model="refInput" :placeholder="refType === 'web' ? '网页 URL（如 https://example.com/doc）' : (refType === 'dir' ? '目录路径（如 /path/to/docs）' : '文档路径（如 /path/to/spec.md）')"
+            @keydown.enter.prevent="addRef"
+            style="flex:1;min-width:0;padding:3px 6px;background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:4px;font-size:11px;">
+          <button v-if="refType === 'dir'" @click="pickRefDir" title="用目录选择弹窗挑选资料目录"
+            style="padding:3px 10px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:11px;">选择目录</button>
+          <button @click="addRef" :disabled="refBusy"
+            style="padding:3px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">添加</button>
+        </div>
+        <div v-if="refs.length" style="display:flex;flex-wrap:wrap;gap:4px;">
+          <span v-for="(r, idx) in refs" :key="r.type + ':' + r.value" :title="r.value"
+            style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:10px;background:#2d2d2d;color:#aaa;font-size:11px;max-width:200px;overflow:hidden;textOverflow:ellipsis;whiteSpace:nowrap;">
+            <span style="font-size:10px;">{{ r.type === 'web' ? '🌐' : (r.type === 'dir' ? '📁' : '📄') }}</span>
+            {{ r.type === 'web' ? r.value : baseName(r.value) }}
+            <span @click="removeRef(idx)" style="cursor:pointer;opacity:.7;" title="移除资料">×</span>
+          </span>
+        </div>
       </div>
-      <div v-if="refs.length" style="display:flex;flex-wrap:wrap;gap:4px;">
-        <span v-for="(r, idx) in refs" :key="r.type + ':' + r.value" :title="r.value"
-          style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:10px;background:#2d2d2d;color:#aaa;font-size:11px;max-width:200px;overflow:hidden;textOverflow:ellipsis;whiteSpace:nowrap;">
-          <span style="font-size:10px;">{{ r.type === 'web' ? '🌐' : (r.type === 'dir' ? '📁' : '📄') }}</span>
-          {{ r.type === 'web' ? r.value : baseName(r.value) }}
-          <span @click="removeRef(idx)" style="cursor:pointer;opacity:.7;" title="移除资料">×</span>
+      <!-- 2.4 执行逆向（两个入口）+ 安装/卸载 -->
+      <div style="padding:0 10px 8px;">
+        <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.4 执行逆向</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button @click="handleNewAgent()" :disabled="busy"
+            title="创建新 Agent 执行规格逆向分析（推荐）"
+            style="padding:5px 12px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+            🚀 开始逆向（新建 Agent）
+          </button>
+          <button @click="handleInCurrentAgent()" :disabled="busy"
+            title="把逆向分析提示词发送给当前 Agent 执行"
+            style="padding:5px 12px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:12px;">
+            在当前 Agent 中执行逆向
+          </button>
+          <button v-if="!installed" @click="doInstall" :disabled="busy || loading"
+            style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+            {{ busy ? '安装中…' : '安装 Reversa' }}
+          </button>
+          <button v-if="installed" @click="doUninstall" :disabled="busy || loading"
+            style="padding:5px 12px;background:#da3633;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+            {{ busy ? '卸载中…' : '卸载' }}
+          </button>
+        </div>
+      </div>
+      <!-- 阶段进度条 -->
+      <div v-if="installed" style="padding:0 10px;font-size:11px;color:#aaa;margin-bottom:4px;">2.5 分析进度</div>
+      <div v-if="installed" style="padding:0 10px;display:flex;gap:2px;margin-bottom:6px;">
+        <div v-for="p in phaseList" :key="p.key" :title="p.key"
+          :style="{flex:'1',height:'6px',borderRadius:'3px',background: p.state === 'done' ? '#3fb950' : (p.state === 'current' ? '#1f6feb' : '#333')}">
+        </div>
+      </div>
+      <div v-if="installed" style="padding:0 10px;display:flex;gap:6px;font-size:11px;color:#888;margin-bottom:6px;flex-wrap:wrap;">
+        <span v-for="p in phaseList" :key="p.key"
+          :style="{color: p.state === 'done' ? '#3fb950' : (p.state === 'current' ? '#79c0ff' : '#888')}">
+          {{ p.state === 'done' ? '✓' : (p.state === 'current' ? '▶' : '○') }} {{ p.label }}
         </span>
+      </div>
+      <div v-if="installed" style="padding:0 10px 8px;font-size:11px;color:#888;">
+        项目：{{ status.project }} · 语言：{{ status.chat_language }} · 输出：{{ status.output_folder }}
       </div>
     </div>
     <!-- 产物浏览 -->
     <div style="padding:0 10px 8px;">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-        <span style="font-size:11px;color:#aaa;">2.5 规格产物 <span style="color:#666;">（_reversa_sdd/）</span></span>
+        <span style="font-size:11px;color:#aaa;">2.6 规格产物 <span style="color:#666;">（_reversa_sdd/）</span></span>
         <span style="flex:1;"></span>
         <button @click="doExportRules" :disabled="exportBusy || !installed"
           style="padding:3px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">
@@ -1427,6 +1398,44 @@ export default {
         </div>
         <pre style="flex:1;overflow:auto;margin:0;padding:8px;font-size:11px;color:#ccc;white-space:pre-wrap;word-break:break-word;">{{ artifactContent }}</pre>
       </div>
+      </div>
+    </div>
+    <!-- 2.7 依赖图（配置在 2.2，此处为全局可视化） -->
+    <div style="padding:0 10px 8px;">
+      <div style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        <span>2.7 依赖图</span>
+        <span style="font-size:10px;color:#666;">（箭头指向被依赖的上游）</span>
+        <span style="flex:1;"></span>
+        <button @click="loadDepsGraph" :disabled="depsLoading" title="刷新依赖图"
+          style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
+          {{ depsLoading ? '加载中…' : '刷新' }}
+        </button>
+      </div>
+      <div v-if="depsLayout" style="overflow:auto;margin-bottom:4px;">
+        <svg :width="depsLayout.width" :height="depsLayout.height" style="display:block;">
+          <!-- 边（箭头指向被依赖方） -->
+          <line v-for="e in depsLayout.edges" :key="e.from + '->' + e.to"
+            :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2"
+            stroke="#7d8590" stroke-width="1.5" marker-end="url(#reversaArrow)"/>
+          <!-- 节点 -->
+          <g v-for="n in depsLayout.nodes" :key="n.path">
+            <rect :x="n.x" :y="n.y" :width="n.w" :height="n.h" rx="6"
+              :fill="n.path === projectDir ? '#1f6feb' : '#2d2d2d'" stroke="#444" stroke-width="1"/>
+            <text :x="n.x + n.w / 2" :y="n.y + n.h / 2" text-anchor="middle" dominant-baseline="central"
+              :fill="n.path === projectDir ? '#fff' : '#ccc'" font-size="11" style="pointer-events:none;">{{ n.label }}</text>
+            <title>{{ n.path }}</title>
+          </g>
+        </svg>
+        <svg width="0" height="0" style="position:absolute;">
+          <defs>
+            <marker id="reversaArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#7d8590"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+      <div v-else style="color:#666;font-size:11px;margin-bottom:4px;">
+        {{ depsLoading ? '加载依赖图…' : '暂无依赖（在 2.2 为当前项目添加上游依赖）' }}
       </div>
     </div>
 
@@ -1508,8 +1517,9 @@ export default {
           <ol style="padding-left:18px;margin:4px 0;">
             <li>「① 项目」→ 添加项目目录（需为已存在目录）</li>
             <li>「② 逆向分析」→ 点「安装 Reversa」（Agent 也会自动装）</li>
+            <li>「② 逆向分析」→ 可选：在 2.2 配置上游依赖、2.3 添加现存资料（逆向时会作为参考输入）</li>
             <li>「② 逆向分析」→ 点「🚀 开始逆向（新建 Agent）」开始逆向，等 5 阶段跑完</li>
-            <li>「② 逆向分析」→ 可选：添加「现存资料库」参考、浏览「规格产物」并「导出 Rules」</li>
+            <li>「② 逆向分析」→ 浏览「规格产物」并「导出 Rules」，在 2.7 查看依赖图</li>
             <li>「③ 正向开发」→ 新建/编辑 NLSpec（LLM 澄清四要素），一键「开启」跑黑灯工厂流水线</li>
             <li>「④ 知识回流」→ 记录基线、分析差异，保持文档与代码同步</li>
           </ol>
