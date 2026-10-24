@@ -227,13 +227,13 @@ class TestOrchestrationTemplate:
         data = self._load(plugin_dir)
         gen_stage = next(s for s in data["flow"] if s["stage"] == "generator")
         assert "output" not in gen_stage, "generator 不应有独立 output 目录"
-        assert gen_stage.get("input") == ".df/plan.md"
+        assert gen_stage.get("input") == ".jarvis/.df/plan.md"
 
     def test_holdout_stage_exists(self, plugin_dir):
-        """holdout 阶段生成隐藏验收场景，产物 .df/holdout.json。"""
+        """holdout 阶段生成隐藏验收场景，产物 .jarvis/.df/holdout.json。"""
         data = self._load(plugin_dir)
         ho = next(s for s in data["flow"] if s["stage"] == "holdout")
-        assert ho.get("output") == ".df/holdout.json"
+        assert ho.get("output") == ".jarvis/.df/holdout.json"
         assert ho.get("agent") == "df_holdout"
 
     def test_holdout_isolated_from_generator(self, plugin_dir):
@@ -242,18 +242,18 @@ class TestOrchestrationTemplate:
         gen_stage = next(s for s in data["flow"] if s["stage"] == "generator")
         gen_inputs = gen_stage.get("input")
         gen_inputs = gen_inputs if isinstance(gen_inputs, list) else [gen_inputs]
-        assert ".df/holdout.json" not in gen_inputs, "holdout 不得注入 generator"
+        assert ".jarvis/.df/holdout.json" not in gen_inputs, "holdout 不得注入 generator"
         val_stage = next(s for s in data["flow"] if s["stage"] == "validator")
         val_inputs = val_stage.get("input")
         val_inputs = val_inputs if isinstance(val_inputs, list) else [val_inputs]
-        assert ".df/holdout.json" in val_inputs, "validator 应消费 holdout 场景"
+        assert ".jarvis/.df/holdout.json" in val_inputs, "validator 应消费 holdout 场景"
 
     def test_regression_stage_exists(self, plugin_dir):
         """regression 阶段跑既有测试防回归，失败即中止。"""
         data = self._load(plugin_dir)
         reg = next(s for s in data["flow"] if s["stage"] == "regression")
         assert reg.get("agent") == "df_regression"
-        assert reg.get("output") == ".df/regression.json"
+        assert reg.get("output") == ".jarvis/.df/regression.json"
         assert reg.get("on_error") == "abort"
 
     def test_sync_stage_exists(self, plugin_dir):
