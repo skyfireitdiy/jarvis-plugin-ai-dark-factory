@@ -1155,7 +1155,7 @@ export default {
           <div style="font-weight:bold;color:#79c0ff;margin-bottom:2px;">🚀 快速上手（照着点）</div>
           <div><b>1.</b> 「① 项目」→ 输入目录或点「选择目录」，再点「添加」</div>
           <div><b>2.</b> 「② 逆向分析」→ 点「安装 Reversa」（Agent 也会自动装，纯新项目可跳过）</div>
-          <div><b>3.</b> 「② 逆向分析」→ 可选：先在 2.2 加上游依赖、2.3 加现存资料，逆向时会参考</div>
+          <div><b>3.</b> 「② 逆向分析」→ 可选：先在 2.2 加上游依赖（2.3 看依赖图）、2.4 加现存资料，逆向时会参考</div>
           <div><b>4.</b> 「② 逆向分析」→ 点「🚀 开始逆向（新建 Agent）」，等 5 阶段跑完</div>
           <div><b>5.</b> 「② 逆向分析」→ 浏览「规格产物」，需要时点「导出 Rules」</div>
           <div><b>6.</b> 「③ 正向开发」→ 点「新建」让 Agent 澄清需求（或已有 spec 直接点「开启」）</div>
@@ -1269,9 +1269,47 @@ export default {
           </span>
         </div>
       </div>
-      <!-- 2.3 现存资料库（逆向输入：仅注入提示词，不落盘到项目） -->
+    <!-- 2.3 依赖图（与 2.2 配套：配置 + 可视化） -->
+    <div style="padding:0 10px 8px;">
+      <div style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        <span>2.3 依赖图</span>
+        <span style="font-size:10px;color:#666;">（箭头指向被依赖的上游）</span>
+        <span style="flex:1;"></span>
+        <button @click="loadDepsGraph" :disabled="depsLoading" title="刷新依赖图"
+          style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
+          {{ depsLoading ? '加载中…' : '刷新' }}
+        </button>
+      </div>
+      <div v-if="depsLayout" style="overflow:auto;margin-bottom:4px;">
+        <svg :width="depsLayout.width" :height="depsLayout.height" style="display:block;">
+          <!-- 边（箭头指向被依赖方） -->
+          <line v-for="e in depsLayout.edges" :key="e.from + '->' + e.to"
+            :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2"
+            stroke="#7d8590" stroke-width="1.5" marker-end="url(#reversaArrow)"/>
+          <!-- 节点 -->
+          <g v-for="n in depsLayout.nodes" :key="n.path">
+            <rect :x="n.x" :y="n.y" :width="n.w" :height="n.h" rx="6"
+              :fill="n.path === projectDir ? '#1f6feb' : '#2d2d2d'" stroke="#444" stroke-width="1"/>
+            <text :x="n.x + n.w / 2" :y="n.y + n.h / 2" text-anchor="middle" dominant-baseline="central"
+              :fill="n.path === projectDir ? '#fff' : '#ccc'" font-size="11" style="pointer-events:none;">{{ n.label }}</text>
+            <title>{{ n.path }}</title>
+          </g>
+        </svg>
+        <svg width="0" height="0" style="position:absolute;">
+          <defs>
+            <marker id="reversaArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#7d8590"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+      <div v-else style="color:#666;font-size:11px;margin-bottom:4px;">
+        {{ depsLoading ? '加载依赖图…' : '暂无依赖（在上方 2.2 为当前项目添加上游依赖）' }}
+      </div>
+    </div>
+      <!-- 2.4 现存资料库（逆向输入：仅注入提示词，不落盘到项目） -->
       <div style="padding:0 10px 8px;">
-        <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.3 现存资料库
+        <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.4 现存资料库
           <span style="color:#666;">（建议先配置：反构时注入提示词作参考）</span>
         </div>
         <div style="display:flex;gap:4px;margin-bottom:4px;">
@@ -1298,9 +1336,9 @@ export default {
           </span>
         </div>
       </div>
-      <!-- 2.4 执行逆向（两个入口）+ 安装/卸载 -->
+      <!-- 2.5 执行逆向（两个入口）+ 安装/卸载 -->
       <div style="padding:0 10px 8px;">
-        <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.4 执行逆向</div>
+        <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.5 执行逆向</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button @click="handleNewAgent()" :disabled="busy"
             title="创建新 Agent 执行规格逆向分析（推荐）"
@@ -1323,7 +1361,7 @@ export default {
         </div>
       </div>
       <!-- 阶段进度条 -->
-      <div v-if="installed" style="padding:0 10px;font-size:11px;color:#aaa;margin-bottom:4px;">2.5 分析进度</div>
+      <div v-if="installed" style="padding:0 10px;font-size:11px;color:#aaa;margin-bottom:4px;">2.6 分析进度</div>
       <div v-if="installed" style="padding:0 10px;display:flex;gap:2px;margin-bottom:6px;">
         <div v-for="p in phaseList" :key="p.key" :title="p.key"
           :style="{flex:'1',height:'6px',borderRadius:'3px',background: p.state === 'done' ? '#3fb950' : (p.state === 'current' ? '#1f6feb' : '#333')}">
@@ -1342,7 +1380,7 @@ export default {
     <!-- 产物浏览 -->
     <div style="padding:0 10px 8px;">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-        <span style="font-size:11px;color:#aaa;">2.6 规格产物 <span style="color:#666;">（_reversa_sdd/）</span></span>
+        <span style="font-size:11px;color:#aaa;">2.7 规格产物 <span style="color:#666;">（_reversa_sdd/）</span></span>
         <span style="flex:1;"></span>
         <button @click="doExportRules" :disabled="exportBusy || !installed"
           style="padding:3px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">
@@ -1398,44 +1436,6 @@ export default {
         </div>
         <pre style="flex:1;overflow:auto;margin:0;padding:8px;font-size:11px;color:#ccc;white-space:pre-wrap;word-break:break-word;">{{ artifactContent }}</pre>
       </div>
-      </div>
-    </div>
-    <!-- 2.7 依赖图（配置在 2.2，此处为全局可视化） -->
-    <div style="padding:0 10px 8px;">
-      <div style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-        <span>2.7 依赖图</span>
-        <span style="font-size:10px;color:#666;">（箭头指向被依赖的上游）</span>
-        <span style="flex:1;"></span>
-        <button @click="loadDepsGraph" :disabled="depsLoading" title="刷新依赖图"
-          style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
-          {{ depsLoading ? '加载中…' : '刷新' }}
-        </button>
-      </div>
-      <div v-if="depsLayout" style="overflow:auto;margin-bottom:4px;">
-        <svg :width="depsLayout.width" :height="depsLayout.height" style="display:block;">
-          <!-- 边（箭头指向被依赖方） -->
-          <line v-for="e in depsLayout.edges" :key="e.from + '->' + e.to"
-            :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2"
-            stroke="#7d8590" stroke-width="1.5" marker-end="url(#reversaArrow)"/>
-          <!-- 节点 -->
-          <g v-for="n in depsLayout.nodes" :key="n.path">
-            <rect :x="n.x" :y="n.y" :width="n.w" :height="n.h" rx="6"
-              :fill="n.path === projectDir ? '#1f6feb' : '#2d2d2d'" stroke="#444" stroke-width="1"/>
-            <text :x="n.x + n.w / 2" :y="n.y + n.h / 2" text-anchor="middle" dominant-baseline="central"
-              :fill="n.path === projectDir ? '#fff' : '#ccc'" font-size="11" style="pointer-events:none;">{{ n.label }}</text>
-            <title>{{ n.path }}</title>
-          </g>
-        </svg>
-        <svg width="0" height="0" style="position:absolute;">
-          <defs>
-            <marker id="reversaArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#7d8590"/>
-            </marker>
-          </defs>
-        </svg>
-      </div>
-      <div v-else style="color:#666;font-size:11px;margin-bottom:4px;">
-        {{ depsLoading ? '加载依赖图…' : '暂无依赖（在 2.2 为当前项目添加上游依赖）' }}
       </div>
     </div>
 
@@ -1517,9 +1517,9 @@ export default {
           <ol style="padding-left:18px;margin:4px 0;">
             <li>「① 项目」→ 添加项目目录（需为已存在目录）</li>
             <li>「② 逆向分析」→ 点「安装 Reversa」（Agent 也会自动装）</li>
-            <li>「② 逆向分析」→ 可选：在 2.2 配置上游依赖、2.3 添加现存资料（逆向时会作为参考输入）</li>
+            <li>「② 逆向分析」→ 可选：在 2.2 配置上游依赖、2.4 添加现存资料（逆向时会作为参考输入）</li>
             <li>「② 逆向分析」→ 点「🚀 开始逆向（新建 Agent）」开始逆向，等 5 阶段跑完</li>
-            <li>「② 逆向分析」→ 浏览「规格产物」并「导出 Rules」，在 2.7 查看依赖图</li>
+            <li>「② 逆向分析」→ 浏览「规格产物」并「导出 Rules」</li>
             <li>「③ 正向开发」→ 新建/编辑 NLSpec（LLM 澄清四要素），一键「开启」跑黑灯工厂流水线</li>
             <li>「④ 知识回流」→ 记录基线、分析差异，保持文档与代码同步</li>
           </ol>
