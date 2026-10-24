@@ -72,6 +72,38 @@ def test_project_dir_required():
     assert "不存在" in r["error"]
 
 
+def test_install_project_passes_language_args(tmp_path, monkeypatch):
+    """install_project 把文档/交互语言透传给 bridge（默认中文）。"""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    captured = {}
+
+    def fake_run_bridge(args, timeout=300):
+        captured["args"] = args
+        return {"success": True, "data": {"version": "1.0.0", "agents": 6}}
+
+    monkeypatch.setattr(api, "_run_bridge", fake_run_bridge)
+
+    # 默认值：doc_language=中文、chat_language=zh-cn
+    r = api.install_project(str(proj))
+    assert r["success"] is True
+    args = captured["args"]
+    assert _arg_value(args, "--doc_language") == "中文"
+    assert _arg_value(args, "--chat_language") == "zh-cn"
+
+    # 显式传参覆盖默认值
+    api.install_project(str(proj), doc_language="English", chat_language="en")
+    args = captured["args"]
+    assert _arg_value(args, "--doc_language") == "English"
+    assert _arg_value(args, "--chat_language") == "en"
+
+
+def _arg_value(args, flag):
+    """取 `--flag value` 形式的参数值。"""
+    idx = args.index(flag)
+    return args[idx + 1]
+
+
 def test_list_artifacts_tree(tmp_path):
     """list_artifacts 返回产物文件树。"""
     proj = _make_project(tmp_path)

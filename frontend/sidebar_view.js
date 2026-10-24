@@ -506,6 +506,12 @@ export default {
         "- 用 reversa 工具（action=status）查看分析进度，action=artifacts/read_artifact 浏览产物。",
         "- 分析完成后用 reversa 工具（action=export_rules）把产物按置信度导出为 Jarvis rule 知识库。",
         "- 分析过程与结论请分阶段汇报，最终给出规格产物清单与置信度汇总。",
+        "",
+        "语言要求（重要）：",
+        "- 写入 _reversa_sdd/ 的所有规格文档（inventory/domain/architecture/sdd 等）必须使用中文撰写。",
+        "- 与用户交互、阶段汇报、结论汇总也使用中文。",
+        "- 代码标识符、文件路径、API 名称、第三方库名等专有名词保持原文，不要翻译。",
+        "- 若 .reversa/state.json 的 doc_language 与此处不一致，以此处要求为准。",
       ];
       // 注入上游依赖参考（决策：Agent 读结构化 deps.json，不依赖图）
       try {
@@ -829,7 +835,12 @@ export default {
       try {
         const payload = await callFunction(
           "install_project",
-          { project_dir: this.projectDir, engine: "codex" },
+          {
+            project_dir: this.projectDir,
+            engine: "codex",
+            chat_language: "zh-cn",
+            doc_language: "中文",
+          },
           this.nodeId,
         );
         this.message = `安装成功：${payload.data.version}，${payload.data.agents} 个 skills`;
