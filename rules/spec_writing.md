@@ -11,6 +11,15 @@ NLSpec（Natural Language Spec，自然语言规格）是 AI 黑灯工厂流水�
 
 黑灯工厂的原则是：**Specs 进，可工作的软件出**。spec 的质量直接决定产出质量——模糊的 spec 会失败，清晰的 spec 会成功。
 
+## 存放位置（固定）
+
+每份 NLSpec 落盘到项目固定目录 **`.jarvis/.df/specs/<功能名>.md`**（每功能一个 spec 文件）：
+
+- 目录固定为 `.jarvis/.df/specs/`，文件名用功能名（如 `login.md`、`order-flow.md`）。
+- 侧边栏「NLSpec 管理」区块扫描该目录列出 spec，并客观校验四要素小节标题是否齐全。
+- 黑灯工厂流水线（`<dark-factory/run>`）先 `read_code` 读取该目录下对应 spec，再写入编排文件顶层 `spec` 字段驱动各阶段。
+- 澄清（`<dark-factory/clarify>`）产出的最终 NLSpec 也落盘到该目录，澄清问答可一并留痕。
+
 ## 四要素（缺一不可）
 
 一份合格的 NLSpec 必须包含以下四部分：
@@ -42,7 +51,7 @@ NLSpec（Natural Language Spec，自然语言规格）是 AI 黑灯工厂流水�
 - 通读需求，对照四要素诊断缺口（缺哪个要素、哪里模糊、哪里自相矛盾），形成问题清单。
 - 逐条向用户提问（一次问清一批，不要挤牙膏），把回答整理进 NLSpec，更新后再复验。
 - 四要素完整、约束显式、接口精确、Non-goals 明确之前，不进入流水线。
-- 澄清过程与最终 NLSpec 可落盘 `.jarvis/.df/clarification.md` 留痕。
+- 澄清过程与最终 NLSpec 落盘 `.jarvis/.df/specs/<功能名>.md` 留痕（每功能一个 spec 文件，固定位置，澄清问答可一并写入）。
 
 ## 与工具配合
 

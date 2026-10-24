@@ -320,6 +320,107 @@ def get_skills(project_dir: Optional[str] = None) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# NLSpec 管理（issue #14）：固定存放位置 <项目根>/.jarvis/.df/specs/
+# ---------------------------------------------------------------------------
+# NLSpec 固定目录（相对项目根）：每个功能一个 spec 文件，遵循 spec_writing 四要素。
+_NLSPEC_DIR = os.path.join(".jarvis", ".df", "specs")
+
+
+def _nlspec_dir_path(project_dir: str) -> str:
+    """返回 NLSpec 固定目录绝对路径（<project>/.jarvis/.df/specs/）。"""
+    return os.path.join(project_dir, _NLSPEC_DIR)
+
+
+def _nlspec_title(content: str) -> str:
+    """从 spec 内容提取标题：首个 # 标题行（去 # 号）；无标题返回空串。"""
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith("# "):
+            return line[2:].strip()
+    return ""
+
+
+def list_nlspecs(project_dir: Optional[str] = None) -> Dict[str, Any]:
+    """列出项目固定 NLSpec 目录（.jarvis/.df/specs/）下的 spec 文件。
+
+    返回 {"success": True, "data": {specs: [{name, title, updated_at, size}]}}。
+    目录不存在时返回空列表（不报错，便于首次使用）。
+    """
+    project_dir, err = _resolve_project(project_dir)
+    if err:
+        return {"success": False, "error": err}
+    specs_dir = _nlspec_dir_path(project_dir)
+    specs: List[Dict[str, Any]] = []
+    if os.path.isdir(specs_dir):
+        try:
+            names = sorted(os.listdir(specs_dir))
+        except Exception:  # noqa: BLE001
+            names = []
+        for name in names:
+            if not name.endswith(".md"):
+                continue
+            full = os.path.join(specs_dir, name)
+            if not os.path.isfile(full):
+                continue
+            try:
+                with open(full, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                stat = os.stat(full)
+            except Exception:  # noqa: BLE001
+                continue
+            specs.append(
+                {
+                    "name": name,
+                    "title": _nlspec_title(content),
+                    "updated_at": stat.st_mtime,
+                    "size": stat.st_size,
+                }
+            )
+    return {"success": True, "data": {"specs": specs}}
+
+
+def get_nlspec(
+    project_dir: Optional[str] = None, name: Optional[str] = None
+) -> Dict[str, Any]:
+    """读取单个 NLSpec 文件内容。
+
+    name 必须是 .jarvis/.df/specs/ 下的合法文件名（.md 结尾、不含路径分隔符），
+    防止路径穿越。文件不存在时返回 {"success": True, "data": {exists: False}}。
+
+    返回 {"success": True, "data": {name, title, content, exists}}。
+    """
+    project_dir, err = _resolve_project(project_dir)
+    if err:
+        return {"success": False, "error": err}
+    name = (name or "").strip()
+    if not name:
+        return {"success": False, "error": "未指定 NLSpec 文件名（name）"}
+    # 防路径穿越：只允许纯文件名（.md 结尾），拒绝路径分隔符/绝对路径/父目录
+    if (
+        os.path.basename(name) != name
+        or name.startswith("/")
+        or name.startswith("\\")
+        or ".." in name.split("/")
+        or ".." in name.split("\\")
+        or not name.endswith(".md")
+    ):
+        return {"success": False, "error": f"非法 NLSpec 文件名: {name}"}
+    specs_dir = _nlspec_dir_path(project_dir)
+    full = os.path.join(specs_dir, name)
+    if not os.path.isfile(full):
+        return {"success": True, "data": {"name": name, "title": "", "content": "", "exists": False}}
+    try:
+        with open(full, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except Exception as e:  # noqa: BLE001
+        return {"success": False, "error": f"读取 NLSpec 失败: {e}"}
+    return {
+        "success": True,
+        "data": {"name": name, "title": _nlspec_title(content), "content": content, "exists": True},
+    }
+
+
+# ---------------------------------------------------------------------------
 # 项目依赖配置（多仓库依赖图数据源）
 # ---------------------------------------------------------------------------
 def _deps_file_path(project_dir: str) -> str:
@@ -847,4 +948,6 @@ PUBLIC_FUNCTIONS: List[str] = [
     "record_sync_baseline",
     "get_sync_status",
     "analyze_sync_diff",
+    "list_nlspecs",
+    "get_nlspec",
 ]

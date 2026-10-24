@@ -53,6 +53,8 @@ def test_public_functions_whitelist():
         "record_sync_baseline",
         "get_sync_status",
         "analyze_sync_diff",
+        "list_nlspecs",
+        "get_nlspec",
     }
     assert set(api.PUBLIC_FUNCTIONS) == expected
     for fn in api.PUBLIC_FUNCTIONS:
@@ -304,3 +306,90 @@ def test_analyze_sync_diff_up_to_date(tmp_path):
     assert r["success"] is True
     assert r["data"]["up_to_date"] is True
     assert r["data"]["changed_files"] == []
+
+
+# ---------------------------------------------------------------------------
+# NLSpec 管理（issue #14）：固定位置 .jarvis/.df/specs/
+# ---------------------------------------------------------------------------
+def _make_nlspec_project(tmp_path):
+    """构造一个带 NLSpec 固定目录的项目。"""
+    proj = tmp_path / "nlspecproj"
+    specs = proj / ".jarvis" / ".df" / "specs"
+    specs.mkdir(parents=True)
+    (specs / "auth.md").write_text(
+        "# 登录功能\n\n## Goal\n实现登录。\n\n## Constraints\nOAuth2。\n\n"
+        "## Interfaces\nPOST /login。\n\n## Non-goals\n不做注册。\n",
+        encoding="utf-8",
+    )
+    (specs / "report.md").write_text(
+        "# 报表导出\n\n## Goal\n导出报表。\n", encoding="utf-8"
+    )
+    return str(proj)
+
+
+def test_list_nlspecs_empty(tmp_path):
+    """无 NLSpec 目录时 list_nlspecs 返回空列表（不报错）。"""
+    proj = tmp_path / "emptyproj"
+    proj.mkdir()
+    r = api.list_nlspecs(str(proj))
+    assert r["success"] is True
+    assert r["data"]["specs"] == []
+
+
+def test_list_nlspecs_lists_specs(tmp_path):
+    """list_nlspecs 列出固定目录下 .md spec，含标题与更新时间。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.list_nlspecs(proj)
+    assert r["success"] is True
+    specs = r["data"]["specs"]
+    names = [s["name"] for s in specs]
+    assert names == ["auth.md", "report.md"]  # 排序
+    auth = next(s for s in specs if s["name"] == "auth.md")
+    assert auth["title"] == "登录功能"
+    assert auth["size"] > 0
+    assert auth["updated_at"] > 0
+    # 非 .md 文件被忽略
+    notes = os.path.join(proj, ".jarvis", ".df", "specs", "notes.txt")
+    with open(notes, "w", encoding="utf-8") as f:
+        f.write("x")
+    r2 = api.list_nlspecs(proj)
+    assert [s["name"] for s in r2["data"]["specs"]] == ["auth.md", "report.md"]
+
+
+def test_get_nlspec_reads_content(tmp_path):
+    """get_nlspec 读取单个 spec 内容与标题。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.get_nlspec(proj, "auth.md")
+    assert r["success"] is True
+    d = r["data"]
+    assert d["exists"] is True
+    assert d["name"] == "auth.md"
+    assert d["title"] == "登录功能"
+    assert "## Goal" in d["content"]
+    assert "## Non-goals" in d["content"]
+
+
+def test_get_nlspec_not_found(tmp_path):
+    """get_nlspec 读取不存在的 spec 返回 exists=False（不报错）。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.get_nlspec(proj, "missing.md")
+    assert r["success"] is True
+    assert r["data"]["exists"] is False
+    assert r["data"]["content"] == ""
+
+
+def test_get_nlspec_path_traversal_blocked(tmp_path):
+    """get_nlspec 拦截路径穿越：绝对路径 / 父目录 / 分隔符。"""
+    proj = _make_nlspec_project(tmp_path)
+    for bad in ["../../etc/passwd", "/etc/passwd", "a/b.md", "..\\evil.md"]:
+        r = api.get_nlspec(proj, bad)
+        assert r["success"] is False, f"应拦截: {bad}"
+        assert "非法" in r["error"] or "未指定" in r["error"]
+
+
+def test_get_nlspec_requires_name(tmp_path):
+    """get_nlspec 缺 name 时报错。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.get_nlspec(proj, None)
+    assert r["success"] is False
+    assert "name" in r["error"]

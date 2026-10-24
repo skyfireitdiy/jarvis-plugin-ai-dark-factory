@@ -311,3 +311,19 @@ class TestPluginConfig:
         tmpl = cfg["replace_map"]["dark-factory/clarify"]["template"]
         assert "提问" in tmpl
         assert "spec_validator" not in tmpl
+
+    def test_templates_reference_fixed_spec_dir(self, plugin_dir):
+        """四模板均应把 NLSpec 落盘/读取到固定目录 .jarvis/.df/specs/。"""
+        cfg = self._load(plugin_dir)
+        for key in ["dark-factory/clarify", "dark-factory/run", "dark-factory/issue", "dark-factory/pr"]:
+            tmpl = cfg["replace_map"][key]["template"]
+            assert ".jarvis/.df/specs/" in tmpl, f"{key} 模板未引用固定 spec 目录"
+            assert "spec_validator" not in tmpl, f"{key} 模板不应依赖 spec_validator"
+
+    def test_run_templates_read_fixed_spec(self, plugin_dir):
+        """run/issue/pr 模板应引导先 read_code 读取固定 NLSpec 文件再写入编排 spec。"""
+        cfg = self._load(plugin_dir)
+        for key in ["dark-factory/run", "dark-factory/issue", "dark-factory/pr"]:
+            tmpl = cfg["replace_map"][key]["template"]
+            assert "read_code" in tmpl, f"{key} 模板未引导读取固定 spec"
+            assert ".jarvis/.df/specs/" in tmpl, f"{key} 模板未引用固定 spec 目录"
