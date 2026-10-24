@@ -21,7 +21,7 @@ orchestration:
 # --- 前端扩展：黑灯工厂侧边栏视图（普通用户可用，不做管理面板）---
 frontend:
   sidebar_views:
-    - id: reversa
+    - id: ai-dark-factory
       title: "黑灯工厂"
       entry: sidebar_view.js
       icon: frontend/icon.svg

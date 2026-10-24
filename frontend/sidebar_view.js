@@ -11,7 +11,7 @@
 // 设计（issue #328）：后端无状态，设置纯前端 localStorage（按节点+项目 key 隔离）；
 //       跨设备共享靠两台设备指向同一工作区目录。
 
-const PLUGIN = "reversa";
+const PLUGIN = "ai-dark-factory";
 // 每节点项目目录列表持久化 key 前缀：jarvis_reversa_dirs_<node>（JSON 数组）。
 const DIRS_KEY_PREFIX = "jarvis_reversa_dirs_";
 // 每节点当前激活项目目录持久化 key 前缀：jarvis_reversa_active_<node>。
