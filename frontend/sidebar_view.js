@@ -1045,6 +1045,24 @@ export default {
     },
     async openArtifact(node) {
       if (node.type !== "file") return;
+      // 优先在宿主编译器中打开（绝对路径 = 项目目录 + 产物相对路径）。
+      // 宿主未提供该通道（旧版本）时回退到侧边栏内嵌预览。
+      const openFile = window.__jarvisOpenFile;
+      if (typeof openFile === "function") {
+        const absPath = `${this.projectDir.replace(/\/+$/, "")}/${node.path.replace(/^\/+/, "")}`;
+        try {
+          const res = await openFile(absPath, { nodeId: this.nodeId, workingDir: this.projectDir });
+          if (res && res.success) {
+            this.selectedArtifact = node;
+            this.artifactContent = "";
+            return;
+          }
+          this.error = (res && res.error) || "在编辑器中打开失败";
+        } catch (e) {
+          this.error = e.message || "在编辑器中打开失败";
+        }
+        return;
+      }
       this.artifactLoading = true;
       this.error = "";
       try {
@@ -1648,8 +1666,9 @@ export default {
           </div>
         </div>
       </div>
-      <!-- 产物内容预览（就地展开） -->
-      <div v-if="selectedArtifact" style="margin-top:4px;border:1px solid #333;border-radius:4px;max-height:260px;display:flex;flex-direction:column;">
+      <!-- 产物内容预览（就地展开）：仅当宿主未提供编辑器打开通道时使用 -->
+      <div v-if="selectedArtifact && artifactContent"
+        style="margin-top:4px;border:1px solid #333;border-radius:4px;max-height:260px;display:flex;flex-direction:column;">
         <div style="padding:4px 8px;font-size:11px;color:#888;display:flex;align-items:center;gap:6px;border-bottom:1px solid #333;">
           <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ selectedArtifact.path }}</span>
           <span v-if="confidenceBadge(selectedArtifact.content)" style="font-size:10px;">{{ confidenceBadge(selectedArtifact.content) }}</span>
