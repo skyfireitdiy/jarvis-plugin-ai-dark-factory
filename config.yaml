@@ -7,7 +7,7 @@ description: >-
   AI Agent 黑灯工厂——Specs 进，可工作的软件出。多 Agent 自主写码/测试/评估，
   人类审 pass/fail 报告。融合 Reversa 逆向工程：对遗留项目做规格逆向分析，
   生成结构化规格（_reversa_sdd/）并导出为 rule 知识库，形成逆向→正向→知识回流闭环。
-version: 0.2.0
+version: 0.3.0
 license: MIT
 logo: assets/ai-dark-factory-icon.svg
 rules_load_dirs:
