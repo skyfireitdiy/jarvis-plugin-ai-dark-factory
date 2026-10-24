@@ -479,6 +479,10 @@ export default {
       this.refresh();
     },
     selectProject(dir) {
+      if (this._suppressClick) {
+        this._suppressClick = false;
+        return;
+      }
       this.projectDir = dir;
       this.projectInput = dir;
       this.persistDirs();
@@ -517,6 +521,28 @@ export default {
       if (top < 8) top = 8;
       this.menuStyle = { left: left + "px", top: top + "px" };
       this.menuVisible = true;
+    },
+    // 移动端长按项目目录 chip 触发右键菜单（无右键的触屏设备）
+    onDirPress(dir, event) {
+      this._pressDir = dir;
+      this._pressTimer = setTimeout(() => {
+        const touch = event && event.changedTouches && event.changedTouches[0];
+        const evt = touch
+          ? { clientX: touch.clientX, clientY: touch.clientY }
+          : { clientX: 0, clientY: 0 };
+        this.openDirMenu(dir, evt);
+        // 长按已触发菜单，抑制随后的 click（避免误选中项目）
+        this._suppressClick = true;
+      }, 500);
+    },
+    onDirRelease() {
+      clearTimeout(this._pressTimer);
+      // 长按结束后延迟清除抑制标志，覆盖随后的 click
+      if (this._suppressClick) {
+        setTimeout(() => {
+          this._suppressClick = false;
+        }, 300);
+      }
     },
     closeDirMenu() {
       this.menuVisible = false;
@@ -1186,10 +1212,12 @@ export default {
         <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;line-height:1.8;color:#c9d1d9;">
           <div style="font-weight:bold;color:#79c0ff;margin-bottom:2px;">🚀 快速上手（照着点）</div>
           <div><b>1.</b> 顶部「项目目录」→ 输入目录或点「选择目录」，再点「添加」</div>
-          <div><b>2.</b> 可选：对遗留项目逆向，「状态」区点「安装 Reversa」（纯新项目开发可跳过）</div>
-          <div><b>3.</b> 可选：「现存资料库」→ 添加文档/网页/目录作参考</div>
-          <div><b>4.</b> 「NLSpec 管理」→ 点「新建」让 Agent 澄清需求（或已有 spec 直接点「开启」）</div>
-          <div><b>5.</b> 流水线跑完即完成——末尾「知识回流」会自动记录基线并同步文档</div>
+          <div><b>2.</b> 开始逆向：在项目目录上<b>右键/长按</b> → 选「创建 Agent 执行规格逆向分析」（或「在当前 Agent 中执行」）</div>
+          <div><b>3.</b> 可选：对遗留项目，「状态」区点「安装 Reversa」（Agent 也会自动装，纯新项目开发可跳过）</div>
+          <div><b>4.</b> 逆向完成后，「状态」区点「导出 Rules」把规格产物导出为知识库（可选）</div>
+          <div><b>5.</b> 可选：「现存资料库」→ 添加文档/网页/目录作参考</div>
+          <div><b>6.</b> 「NLSpec 管理」→ 点「新建」让 Agent 澄清需求（或已有 spec 直接点「开启」）</div>
+          <div><b>7.</b> 流水线跑完即完成——末尾「知识回流」会自动记录基线并同步文档</div>
           <div style="color:#8b949e;margin-top:2px;">详细原理见下方闭环图与各区块说明。</div>
         </div>
         <!-- 闭环图：逆向分析 → 正向开发 → 知识回流 -->
@@ -1250,7 +1278,8 @@ export default {
       </div>
       <div v-if="dirs.length" style="display:flex;flex-wrap:wrap;gap:4px;">
         <span v-for="d in dirs" :key="d" @click="selectProject(d)" @contextmenu.prevent="openDirMenu(d, $event)"
-          :title="d + '（右键：创建 Agent 执行规格逆向分析）'"
+          @touchstart.prevent="onDirPress(d, $event)" @touchend="onDirRelease" @touchmove="onDirRelease" @touchcancel="onDirRelease"
+          :title="d + '（右键/长按：创建 Agent 执行规格逆向分析）'"
           :style="{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 6px',borderRadius:'10px',cursor:'pointer',fontSize:'11px',maxWidth:'180px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',background: d === projectDir ? '#1f6feb' : '#2d2d2d', color: d === projectDir ? '#fff' : '#aaa'}">
           {{ d }}
           <span @click.stop="removeProject(d)" style="color:inherit;opacity:.7;">×</span>
@@ -1526,10 +1555,10 @@ export default {
           <p><b>使用步骤</b>：</p>
           <ol style="padding-left:18px;margin:4px 0;">
             <li>添加项目目录（需为已存在目录）</li>
-            <li>点击「安装 Reversa」安装工作区（绕过交互式 CLI）</li>
+            <li>在项目目录上<b>右键/长按</b> → 选「创建 Agent 执行规格逆向分析」开始逆向（Agent 会自动安装工作区）</li>
             <li>在「现存资料库」为项目添加文档/网页/目录参考资料（反构时注入提示词）</li>
             <li>在「NLSpec 管理」新建/编辑 NLSpec（LLM 澄清四要素），一键「开启」跑黑灯工厂流水线</li>
-            <li>浏览产物，按置信度「导出 Rules」复用；用「知识回流」记录基线、分析差异保持文档同步</li>
+            <li>逆向产物在「状态」区点「导出 Rules」复用；用「知识回流」记录基线、分析差异保持文档同步</li>
           </ol>
           <p><b>5 阶段</b>：侦察 → 挖掘 → 解读 → 生成 → 评审</p>
           <p><b>置信度</b>：🟢CONFIRMED 已确认 / 🟡INFERRED 推断 / 🔴GAP 缺口（默认不导出）</p>
