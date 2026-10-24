@@ -191,6 +191,9 @@ export default {
       // 知识回流（sync）
       syncStatus: null, // {has_baseline, base_commit, head_commit, stale, changed_artifacts, ...}
       syncBusy: false,
+      // 前置条件检查结果（项目目录是否存在/是否 git 仓库），null 表示未检查
+      projectCheck: null, // {path, exists, is_git, error?}
+      projectCheckLoading: false,
       // 帮助弹层
       helpVisible: false,
       // 使用说明（闭环流程图）折叠状态
@@ -205,6 +208,96 @@ export default {
     // 是否已安装（status.installed）
     installed() {
       return !!(this.status && this.status.installed);
+    },
+    // 项目目录前置条件：已检查且目录存在（未检查时不拦截，避免首屏误禁用）
+    projectReady() {
+      const c = this.projectCheck;
+      if (!c || c.path !== this.projectDir) return true;
+      return !!c.exists;
+    },
+    // 项目目录前置条件未满足时的原因（用于按钮 title/提示）
+    projectBlockReason() {
+      const c = this.projectCheck;
+      if (!c || c.path !== this.projectDir) return "";
+      if (c.error) return c.error;
+      if (!c.exists) return "项目目录不存在或不可访问，请重新选择";
+      return "";
+    },
+    // 是否属于 git 仓库（知识回流依赖 git 基线；未检查时按可用处理）
+    isGitRepo() {
+      const c = this.projectCheck;
+      if (!c || c.path !== this.projectDir) return true;
+      return !!c.is_git;
+    },
+    // 逆向分析是否已全部完成（5 阶段）
+    analysisDone() {
+      if (!this.installed) return false;
+      const done = new Set(
+        (Array.isArray(this.status && this.status.completed)
+          ? this.status.completed
+          : []
+        ).map((p) => String(p)),
+      );
+      return PHASES.every((p) => done.has(p));
+    },
+    // 是否已有规格产物（用于「导出 Rules」前置条件）
+    hasArtifacts() {
+      const walk = (list) =>
+        (list || []).some(
+          (n) => n && (n.type === "file" || (n.type === "dir" && walk(n.children))),
+        );
+      return walk(this.artifacts);
+    },
+    // 是否可开始逆向：必须已安装 + 项目目录可用 + 无进行中的操作
+    canStartAnalysis() {
+      return this.installed && this.projectReady && !this.busy && !this.loading;
+    },
+    // 开始逆向被禁用的原因（空串表示可执行）
+    startAnalysisBlockReason() {
+      if (!this.projectDir) return "请先选择项目目录";
+      if (!this.projectReady) return this.projectBlockReason || "项目目录不可用";
+      if (this.loading) return "正在加载项目状态…";
+      if (!this.installed) return "请先安装 Reversa 工作区（2.1 / 2.5 的「安装 Reversa」）";
+      if (this.busy) return "有操作正在进行，请稍候";
+      return "";
+    },
+    // 是否可导出 Rules：已安装 + 有产物
+    canExportRules() {
+      return this.installed && this.hasArtifacts && !this.exportBusy;
+    },
+    // 导出 Rules 被禁用的原因
+    exportBlockReason() {
+      if (!this.installed) return "请先安装 Reversa 工作区";
+      if (!this.hasArtifacts) return "暂无规格产物，请先运行 Reversa 分析";
+      if (this.exportBusy) return "正在导出…";
+      return "";
+    },
+    // 是否可记录基线：已安装 + 有产物 + git 仓库
+    canRecordBaseline() {
+      return this.installed && this.hasArtifacts && this.isGitRepo && !this.syncBusy;
+    },
+    // 记录基线被禁用的原因
+    baselineBlockReason() {
+      if (!this.installed) return "请先安装 Reversa 工作区";
+      if (!this.hasArtifacts) return "暂无规格产物，请先运行 Reversa 逆向分析";
+      if (!this.isGitRepo) return "项目不是 git 仓库，无法记录 commit 基线";
+      if (this.syncBusy) return "处理中…";
+      return "";
+    },
+    // 是否可分析差异：已有基线 + git 仓库
+    canAnalyzeSync() {
+      return (
+        !!(this.syncStatus && this.syncStatus.has_baseline) &&
+        this.isGitRepo &&
+        !this.syncBusy
+      );
+    },
+    // 分析差异被禁用的原因
+    analyzeSyncBlockReason() {
+      if (!this.isGitRepo) return "项目不是 git 仓库，无法比对代码变更";
+      if (!(this.syncStatus && this.syncStatus.has_baseline)) return "请先「记录基线」";
+      if (this.syncBusy) return "处理中…";
+      return "";
     },
     // 当前阶段索引（-1 表示未开始/未知）
     currentPhaseIndex() {
@@ -568,6 +661,14 @@ export default {
         this.error = "请先选择项目目录";
         return;
       }
+      if (!this.installed) {
+        this.error = "请先安装 Reversa 工作区再开始逆向";
+        return;
+      }
+      if (!this.projectReady) {
+        this.error = this.projectBlockReason || "项目目录不可用";
+        return;
+      }
       const send =
         typeof window !== "undefined" && window.__jarvisSendToActiveAgent;
       if (typeof send !== "function") {
@@ -587,6 +688,14 @@ export default {
       dir = dir || this.projectDir;
       if (!dir) {
         this.error = "请先选择项目目录";
+        return;
+      }
+      if (!this.installed) {
+        this.error = "请先安装 Reversa 工作区再开始逆向";
+        return;
+      }
+      if (!this.projectReady) {
+        this.error = this.projectBlockReason || "项目目录不可用";
         return;
       }
       const openModal =
@@ -745,6 +854,12 @@ export default {
     // 基于该 NLSpec 开启黑灯工厂流程（<dark-factory/run>，读固定 spec）
     async openNlspecPipeline(name) {
       if (!this.projectDir || !name) return;
+      const spec = this.nlspecs.find((s) => s.name === name);
+      const missing = spec ? this.missingElements(spec) : [];
+      if (missing.length) {
+        this.error = `NLSpec 四要素不完整（缺 ${missing.join("、")}），请先点「编辑」澄清补齐`;
+        return;
+      }
       const openModal =
         typeof window !== "undefined" && window.__jarvisOpenCreateAgentModal;
       const create =
@@ -797,6 +912,7 @@ export default {
       this.error = "";
       try {
         if (this.projectDir) {
+          await this.loadProjectCheck();
           await this.loadStatus();
           await this.loadArtifacts();
           await this.loadSyncStatus();
@@ -804,6 +920,7 @@ export default {
           this.status = null;
           this.artifacts = [];
           this.syncStatus = null;
+          this.projectCheck = null;
         }
         await this.loadDepsGraph();
       } catch (e) {
@@ -825,6 +942,37 @@ export default {
     async loadStatus() {
       const payload = await callFunction("get_status", { project_dir: this.projectDir }, this.nodeId);
       this.status = payload.data || {};
+    },
+    // 检查项目目录前置条件（是否存在 / 是否 git 仓库），供按钮可用性限制
+    async loadProjectCheck() {
+      if (!this.projectDir) {
+        this.projectCheck = null;
+        return;
+      }
+      const dir = this.projectDir;
+      this.projectCheckLoading = true;
+      try {
+        const payload = await callFunction("check_project", { project_dir: dir }, this.nodeId);
+        const d = payload.data || {};
+        // 期间切换了项目则丢弃过期结果
+        if (this.projectDir !== dir) return;
+        this.projectCheck = {
+          path: dir,
+          exists: d.exists !== false,
+          is_git: !!d.is_git,
+        };
+      } catch (e) {
+        if (this.projectDir !== dir) return;
+        // 检查失败不阻断使用，仅记录原因
+        this.projectCheck = {
+          path: dir,
+          exists: true,
+          is_git: true,
+          error: String((e && e.message) || e),
+        };
+      } finally {
+        this.projectCheckLoading = false;
+      }
     },
     // ---- 安装/卸载 ----
     async doInstall() {
@@ -923,6 +1071,14 @@ export default {
     async doExportRules() {
       if (!this.projectDir) {
         this.error = "请先选择项目目录";
+        return;
+      }
+      if (!this.installed) {
+        this.error = "请先安装 Reversa 工作区";
+        return;
+      }
+      if (!this.hasArtifacts) {
+        this.error = "暂无规格产物，请先运行 Reversa 逆向分析";
         return;
       }
       this.exportBusy = true;
@@ -1093,6 +1249,18 @@ export default {
         this.error = "请先选择项目目录";
         return;
       }
+      if (!this.installed) {
+        this.error = "请先安装 Reversa 工作区";
+        return;
+      }
+      if (!this.hasArtifacts) {
+        this.error = "暂无规格产物，请先运行 Reversa 逆向分析";
+        return;
+      }
+      if (!this.isGitRepo) {
+        this.error = "项目不是 git 仓库，无法记录 commit 基线";
+        return;
+      }
       this.syncBusy = true;
       this.error = "";
       this.message = "";
@@ -1115,6 +1283,14 @@ export default {
     async doAnalyzeSync() {
       if (!this.projectDir) {
         this.error = "请先选择项目目录";
+        return;
+      }
+      if (!this.isGitRepo) {
+        this.error = "项目不是 git 仓库，无法比对代码变更";
+        return;
+      }
+      if (!(this.syncStatus && this.syncStatus.has_baseline)) {
+        this.error = "请先「记录基线」再分析差异";
         return;
       }
       this.syncBusy = true;
@@ -1261,6 +1437,13 @@ export default {
         <button @click="refresh" :disabled="busy" title="刷新"
           style="padding:3px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">刷新</button>
       </div>
+      <!-- 前置条件提示：项目目录不可用 / 非 git 仓库 -->
+      <div v-if="!projectReady" style="padding:0 10px 6px;font-size:11px;color:#f85149;">
+        ⚠ {{ projectBlockReason }}
+      </div>
+      <div v-else-if="!isGitRepo" style="padding:0 10px 6px;font-size:11px;color:#d29922;">
+        ⚠ 当前项目不是 git 仓库：「④ 知识回流」的记录基线/分析差异不可用（逆向分析与正向开发不受影响）
+      </div>
       <!-- 2.2 上游依赖（逆向输入：分析时 Agent 会参考上游规格产物） -->
       <div style="padding:0 10px 8px;">
         <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.2 上游依赖
@@ -1354,17 +1537,18 @@ export default {
       <div style="padding:0 10px 8px;">
         <div style="font-size:11px;color:#aaa;margin-bottom:4px;">2.5 执行逆向</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button @click="handleNewAgent()" :disabled="busy"
-            title="创建新 Agent 执行规格逆向分析（推荐）"
-            style="padding:5px 12px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+          <button @click="handleNewAgent()" :disabled="!canStartAnalysis"
+            :title="startAnalysisBlockReason || '创建新 Agent 执行规格逆向分析（推荐）'"
+            :style="{padding:'5px 12px',background: canStartAnalysis ? '#1f6feb' : '#2d2d2d', color: canStartAnalysis ? '#fff' : '#777', border:'none', borderRadius:'4px', cursor: canStartAnalysis ? 'pointer' : 'not-allowed', fontSize:'12px'}">
             🚀 开始逆向（新建 Agent）
           </button>
-          <button @click="handleInCurrentAgent()" :disabled="busy"
-            title="把逆向分析提示词发送给当前 Agent 执行"
-            style="padding:5px 12px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:12px;">
+          <button @click="handleInCurrentAgent()" :disabled="!canStartAnalysis"
+            :title="startAnalysisBlockReason || '把逆向分析提示词发送给当前 Agent 执行'"
+            :style="{padding:'5px 12px',background:'#2d2d2d',color: canStartAnalysis ? '#ddd' : '#777',border:'1px solid #444',borderRadius:'4px',cursor: canStartAnalysis ? 'pointer' : 'not-allowed',fontSize:'12px'}">
             在当前 Agent 中执行逆向
           </button>
-          <button v-if="!installed" @click="doInstall" :disabled="busy || loading"
+          <button v-if="!installed" @click="doInstall" :disabled="busy || loading || !projectReady"
+            :title="projectReady ? '安装 Reversa 工作区（.reversa/ 与 .agents/skills/）' : (projectBlockReason || '项目目录不可用')"
             style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
             {{ busy ? '安装中…' : '安装 Reversa' }}
           </button>
@@ -1372,6 +1556,10 @@ export default {
             style="padding:5px 12px;background:#da3633;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
             {{ busy ? '卸载中…' : '卸载' }}
           </button>
+        </div>
+        <!-- 前置条件提示：未安装时明确告知为什么不能开始逆向 -->
+        <div v-if="!installed" style="margin-top:4px;font-size:11px;color:#d29922;">
+          未安装 Reversa 工作区，需先点「安装 Reversa」才能开始逆向。
         </div>
       </div>
       <!-- 阶段进度条 -->
@@ -1396,8 +1584,9 @@ export default {
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
         <span style="font-size:11px;color:#aaa;">2.7 规格产物 <span style="color:#666;">（_reversa_sdd/）</span></span>
         <span style="flex:1;"></span>
-        <button @click="doExportRules" :disabled="exportBusy || !installed"
-          style="padding:3px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">
+        <button @click="doExportRules" :disabled="!canExportRules"
+          :title="exportBlockReason || '把产物按置信度导出为 Jarvis rule'"
+          :style="{padding:'3px 10px',background: canExportRules ? '#1f6feb' : '#2d2d2d', color: canExportRules ? '#fff' : '#777', border:'none', borderRadius:'4px', cursor: canExportRules ? 'pointer' : 'not-allowed', fontSize:'11px'}">
           {{ exportBusy ? '导出中…' : '导出 Rules' }}
         </button>
       </div>
@@ -1461,8 +1650,9 @@ export default {
         <span style="flex:1;"></span>
         <button @click="scanNlspecs" :disabled="nlspecLoading" title="重新扫描工作区 NLSpec"
           style="padding:3px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">扫描</button>
-        <button @click="newNlspec" :disabled="nlspecBusy" title="新建 NLSpec（创建 Agent 跑澄清流程）"
-          style="padding:3px 8px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">新建</button>
+        <button @click="newNlspec" :disabled="nlspecBusy || !projectReady"
+          :title="projectReady ? '新建 NLSpec（创建 Agent 跑澄清流程）' : (projectBlockReason || '项目目录不可用')"
+          :style="{padding:'3px 8px',background: (nlspecBusy || !projectReady) ? '#2d2d2d' : '#1f6feb', color: (nlspecBusy || !projectReady) ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || !projectReady) ? 'not-allowed' : 'pointer', fontSize:'11px'}">新建</button>
       </div>
       <div style="font-size:10px;color:#666;margin-bottom:4px;">NLSpec 存放于 .jarvis/.df/specs/</div>
       <div v-if="nlspecLoading" style="color:#888;font-size:11px;">扫描中…</div>
@@ -1478,8 +1668,9 @@ export default {
           <span v-else style="color:#3fb950;font-size:10px;">✓ 完整</span>
           <button @click="editNlspec(s.name)" :disabled="nlspecBusy" title="编辑（创建 Agent 跑澄清补齐四要素）"
             style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">编辑</button>
-          <button @click="openNlspecPipeline(s.name)" :disabled="nlspecBusy" title="基于该 NLSpec 开启黑灯工厂流程"
-            style="padding:2px 6px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">开启</button>
+          <button @click="openNlspecPipeline(s.name)" :disabled="nlspecBusy || missingElements(s).length > 0"
+            :title="missingElements(s).length ? '四要素不完整，请先点「编辑」澄清补齐：' + missingElements(s).join('、') : '基于该 NLSpec 开启黑灯工厂流程'"
+            :style="{padding:'2px 6px',background: (nlspecBusy || missingElements(s).length) ? '#2d2d2d' : '#1f6feb', color: (nlspecBusy || missingElements(s).length) ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || missingElements(s).length) ? 'not-allowed' : 'pointer', fontSize:'10px'}">开启</button>
         </div>
       </div>
     </div>
@@ -1500,12 +1691,14 @@ export default {
         </template>
         <span v-else style="color:#666;">未记录基线</span>
         <span style="flex:1;"></span>
-        <button @click="doRecordBaseline" :disabled="syncBusy" title="把当前 commit + 产物 hash 固化为基线"
-          style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
+        <button @click="doRecordBaseline" :disabled="!canRecordBaseline"
+          :title="baselineBlockReason || '把当前 commit + 产物 hash 固化为基线'"
+          :style="{padding:'2px 8px',background:'#2d2d2d',color: canRecordBaseline ? '#ddd' : '#777',border:'1px solid #444',borderRadius:'4px',cursor: canRecordBaseline ? 'pointer' : 'not-allowed',fontSize:'11px'}">
           {{ syncBusy ? '处理中…' : '记录基线' }}
         </button>
-        <button @click="doAnalyzeSync" :disabled="syncBusy || !(syncStatus && syncStatus.has_baseline)" title="分析基线到当前 HEAD 的代码变更对产物的影响"
-          style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
+        <button @click="doAnalyzeSync" :disabled="!canAnalyzeSync"
+          :title="analyzeSyncBlockReason || '分析基线到当前 HEAD 的代码变更对产物的影响'"
+          :style="{padding:'2px 8px',background:'#2d2d2d',color: canAnalyzeSync ? '#ddd' : '#777',border:'1px solid #444',borderRadius:'4px',cursor: canAnalyzeSync ? 'pointer' : 'not-allowed',fontSize:'11px'}">
           {{ syncBusy ? '处理中…' : '分析差异' }}
         </button>
       </div>
@@ -1538,6 +1731,7 @@ export default {
             <li>「④ 知识回流」→ 记录基线、分析差异，保持文档与代码同步</li>
           </ol>
           <p><b>5 阶段</b>：侦察 → 挖掘 → 解读 → 生成 → 评审</p>
+          <p><b>按钮可用性</b>：灰色按钮表示前置条件未满足，鼠标悬停可看原因。逆向需先安装 Reversa；导出 Rules 需有产物；知识回流需 git 仓库且已有基线；NLSpec 四要素不全时「开启」不可用（先点「编辑」澄清）。</p>
           <p><b>置信度</b>：🟢CONFIRMED 已确认 / 🟡INFERRED 推断 / 🔴GAP 缺口（默认不导出）</p>
           <p><b>数据</b>：设置存于浏览器 localStorage（按节点+项目隔离）；跨设备共享靠两台设备指向同一工作区目录。</p>
         </div>

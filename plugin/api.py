@@ -173,6 +173,49 @@ def install_project(
     return {"success": True, "data": resp["data"]}
 
 
+def check_project(project_dir: Optional[str] = None) -> Dict[str, Any]:
+    """检查项目目录前置条件（供前端做按钮可用性限制）。
+
+    与其它函数不同：目录不存在时 success 仍为 True，用 data.exists=False
+    表达，便于前端给出「目录不存在」提示而不是抛错。
+
+    返回 {"success": True, "data": {path, exists, is_dir, is_git,
+    has_reversa_state, has_output}}。
+    """
+    raw = str(project_dir or "").strip()
+    if not raw:
+        return {"success": False, "error": "未指定项目目录（project_dir）"}
+    abs_path = os.path.abspath(os.path.expanduser(raw))
+    is_dir = os.path.isdir(abs_path)
+    if not is_dir:
+        return {
+            "success": True,
+            "data": {
+                "path": abs_path,
+                "exists": False,
+                "is_dir": False,
+                "is_git": False,
+                "has_reversa_state": False,
+                "has_output": False,
+            },
+        }
+    return {
+        "success": True,
+        "data": {
+            "path": abs_path,
+            "exists": True,
+            "is_dir": True,
+            "is_git": os.path.isdir(os.path.join(abs_path, ".git")),
+            "has_reversa_state": os.path.isfile(
+                os.path.join(abs_path, ".reversa", "state.json")
+            ),
+            "has_output": os.path.isdir(
+                os.path.join(abs_path, _DEFAULT_OUTPUT_FOLDER)
+            ),
+        },
+    }
+
+
 def get_status(project_dir: Optional[str] = None) -> Dict[str, Any]:
     """读取项目 .reversa/state.json，返回分析进度。
 
@@ -936,6 +979,7 @@ def _now_iso() -> str:
 
 # 可被 gateway 代理调用的函数白名单（防止任意函数被调用）
 PUBLIC_FUNCTIONS: List[str] = [
+    "check_project",
     "install_project",
     "get_status",
     "uninstall_project",

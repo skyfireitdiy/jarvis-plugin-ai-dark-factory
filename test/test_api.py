@@ -41,6 +41,7 @@ def _make_project(tmp_path):
 def test_public_functions_whitelist():
     """PUBLIC_FUNCTIONS 白名单包含全部功能且均可调用。"""
     expected = {
+        "check_project",
         "install_project",
         "get_status",
         "uninstall_project",
@@ -425,3 +426,42 @@ def test_get_nlspec_requires_name(tmp_path):
     r = api.get_nlspec(proj, None)
     assert r["success"] is False
     assert "name" in r["error"]
+
+
+def test_check_project_flags(tmp_path):
+    """check_project 返回目录存在性、git 仓库、reversa 状态等前置标记。"""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    r = api.check_project(str(proj))
+    assert r["success"] is True
+    d = r["data"]
+    assert d["exists"] is True
+    assert d["is_dir"] is True
+    assert d["is_git"] is False
+    assert d["has_reversa_state"] is False
+    assert d["has_output"] is False
+
+    (proj / ".git").mkdir()
+    (proj / ".reversa").mkdir()
+    (proj / ".reversa" / "state.json").write_text("{}", encoding="utf-8")
+    (proj / "_reversa_sdd").mkdir()
+    d = api.check_project(str(proj))["data"]
+    assert d["is_git"] is True
+    assert d["has_reversa_state"] is True
+    assert d["has_output"] is True
+
+
+def test_check_project_missing_dir_not_error(tmp_path):
+    """目录不存在时 success 仍为 True，用 exists=False 表达（供前端提示）。"""
+    missing = str(tmp_path / "nope")
+    r = api.check_project(missing)
+    assert r["success"] is True
+    assert r["data"]["exists"] is False
+    assert r["data"]["is_git"] is False
+
+
+def test_check_project_requires_project_dir():
+    """check_project 缺 project_dir 时报错。"""
+    r = api.check_project(None)
+    assert r["success"] is False
+    assert "project_dir" in r["error"]
