@@ -1256,7 +1256,7 @@ export default {
         <button @click="handleInCurrentAgent()" :disabled="busy"
           title="把逆向分析提示词发送给当前 Agent 执行"
           style="padding:5px 12px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:12px;">
-          在当前 Agent 中执行
+          在当前 Agent 中执行逆向
         </button>
         <button v-if="!installed" @click="doInstall" :disabled="busy || loading"
           style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
