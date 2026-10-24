@@ -856,6 +856,10 @@ def get_sync_status(project_dir: Optional[str] = None) -> Dict[str, Any]:
         return {"success": False, "error": err}
     meta = _read_sync_meta(project_dir)
     if not meta or not meta.get("base_commit"):
+        # baseline_pending：尚无基线，但已有产物且是 git 仓库 → 可自动补录基线
+        baseline_pending = bool(_walk_md_files(project_dir)) and bool(
+            _git_head_commit(project_dir)
+        )
         return {
             "success": True,
             "data": {
@@ -863,6 +867,7 @@ def get_sync_status(project_dir: Optional[str] = None) -> Dict[str, Any]:
                 "base_commit": None,
                 "head_commit": _git_head_commit(project_dir),
                 "stale": False,
+                "baseline_pending": baseline_pending,
                 "changed_artifacts": [],
                 "added_artifacts": [],
                 "removed_artifacts": [],
@@ -900,6 +905,7 @@ def get_sync_status(project_dir: Optional[str] = None) -> Dict[str, Any]:
             "base_commit_msg": meta.get("base_commit_msg") or "",
             "head_commit": head_commit,
             "stale": stale,
+            "baseline_pending": False,
             "changed_artifacts": changed,
             "added_artifacts": added,
             "removed_artifacts": removed,
