@@ -174,6 +174,8 @@ export default {
       // 导出
       exportBusy: false,
       includeGap: false,
+      // 「导出 Rules 是做什么的」说明折叠状态
+      exportHelpVisible: false,
       // 依赖图
       depsGraph: null, // {nodes: [{id,label,path}], edges: [{from,to}]}，from 依赖 to（箭头指向被依赖方）
       depsLoading: false,
@@ -1585,7 +1587,7 @@ export default {
         <span style="font-size:11px;color:#aaa;">2.7 规格产物 <span style="color:#666;">（_reversa_sdd/）</span></span>
         <span style="flex:1;"></span>
         <button @click="doExportRules" :disabled="!canExportRules"
-          :title="exportBlockReason || '把产物按置信度导出为 Jarvis rule'"
+          :title="exportBlockReason || '把 _reversa_sdd/ 产物导出为可检索的 Jarvis rule（跨项目复用才需要，本项目闭环可直接读产物）'"
           :style="{padding:'3px 10px',background: canExportRules ? '#1f6feb' : '#2d2d2d', color: canExportRules ? '#fff' : '#777', border:'none', borderRadius:'4px', cursor: canExportRules ? 'pointer' : 'not-allowed', fontSize:'11px'}">
           {{ exportBusy ? '导出中…' : '导出 Rules' }}
         </button>
@@ -1593,6 +1595,23 @@ export default {
       <label v-if="installed" style="display:flex;align-items:center;gap:4px;margin-bottom:4px;font-size:11px;color:#888;cursor:pointer;">
         <input type="checkbox" v-model="includeGap"> 导出 🔴GAP（默认只导出 🟢CONFIRMED/🟡INFERRED）
       </label>
+      <!-- 导出 Rules 用途说明（可折叠）：解释这步是干什么的、什么时候需要 -->
+      <div style="margin-bottom:4px;">
+        <span @click="exportHelpVisible = !exportHelpVisible"
+          style="font-size:11px;color:#79c0ff;cursor:pointer;user-select:none;">
+          {{ exportHelpVisible ? '▾' : '▸' }} 导出 Rules 是做什么的？
+        </span>
+        <div v-if="exportHelpVisible"
+          style="margin-top:4px;padding:6px 8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;font-size:11px;line-height:1.7;color:#8b949e;">
+          <div><b style="color:#c9d1d9;">做什么</b>：把 <code style="color:#79c0ff;">_reversa_sdd/</code> 下的规格文档复制一份到
+            <code style="color:#79c0ff;">.jarvis/rules/reversa/artifacts/</code>，并加上 name/description/置信度等元信息，
+            使其成为 Jarvis 可检索的 rule（知识库条目）。</div>
+          <div><b style="color:#c9d1d9;">什么时候需要</b>：想让这套领域知识在<b>其它项目</b>里被 Agent 复用、或被规则检索命中时才需要。</div>
+          <div><b style="color:#d29922;">什么时候不需要</b>：只在本项目跑「逆向 → 正向开发 → 知识回流」闭环时<b>不需要</b>——
+            正向开发时 Agent 直接 <code style="color:#79c0ff;">read_code</code> 读 <code style="color:#79c0ff;">_reversa_sdd/</code> 里的原文即可，更准也没有副本。</div>
+          <div style="color:#6e7681;">注意：导出是<b>一次性复制</b>，产物后续更新不会自动同步，需要重新导出。</div>
+        </div>
+      </div>
       <div style="max-height:220px;overflow:auto;border:1px solid #333;border-radius:4px;background:#1a1a1a;">
         <div v-if="!artifacts.length" style="padding:8px;color:#666;font-size:11px;">
           {{ installed ? '暂无产物，请运行 Reversa 分析' : '安装后运行 Reversa 分析生成产物' }}
