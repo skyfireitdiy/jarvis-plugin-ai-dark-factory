@@ -44,6 +44,7 @@ jarvis --list-plugins   # 确认 ai-dark-factory 插件已注册
 ### 1. 指令模板（推荐）
 在输入框输入：
 - **`<dark-factory/run>`**：用黑灯工厂流水线完成一个开发任务
+- **`<dark-factory/quick>`**：用简化版黑灯工厂工作流完成一个开发任务（单 agent 直接干 + 知识回流，适合小需求）
 - **`<dark-factory/issue>`**：用黑灯工厂工作流开发 GitHub Issue 需求
 - **`<dark-factory/pr>`**：用黑灯工厂工作流处理 GitHub Pull Request
 
