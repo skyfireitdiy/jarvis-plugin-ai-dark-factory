@@ -981,8 +981,10 @@ def _map_code_to_artifacts(
     """把变更代码文件映射到受影响的规格产物。
 
     读取 traceability/code-spec-matrix.md（Legacy file → unit coverage matrix），
-    若存在则按映射匹配；否则回退到「变更文件所属目录名匹配产物目录名」的启发式。
-    返回受影响产物相对路径列表（去重、排序）。
+    若存在则按映射匹配；矩阵未命中（或矩阵缺失）时回退到「代码路径关键词匹配
+    实际产物目录」的启发式。返回受影响产物相对路径列表（去重、排序）。
+
+    注意：返回的是启发式候选清单（可能误报/漏报），供 Agent 逐个确认后再更新文档。
     """
     affected: List[str] = []
     matrix_path = os.path.join(
@@ -1002,13 +1004,18 @@ def _map_code_to_artifacts(
         for m in re.finditer(r"([A-Za-z0-9_\-/]+\.md)", line):
             matrix_artifact_terms.append(m.group(1))
 
+    # 回退用：实际存在的产物路径（矩阵缺失/未命中时的匹配对象）
+    actual_artifacts = _walk_md_files(project_dir)
+
     for cf in changed_files:
         code_path = cf.get("path") or ""
         if not code_path:
             continue
         # 1) 矩阵映射：代码文件路径出现在矩阵行 → 该行引用的产物
+        matrix_hit = False
         for line in matrix_lines:
             if code_path in line:
+                matrix_hit = True
                 for m in re.finditer(r"([A-Za-z0-9_\-/]+\.md)", line):
                     affected.append(m.group(1))
         # 2) 启发式：代码文件所在目录名匹配产物目录名
@@ -1016,7 +1023,14 @@ def _map_code_to_artifacts(
         for term in matrix_artifact_terms:
             term_dir = os.path.dirname(term)
             if term_dir and code_dir and (term_dir in code_dir or code_dir in term_dir):
+                matrix_hit = True
                 affected.append(term)
+        # 3) 回退：矩阵未命中时，用代码路径关键词匹配实际产物（不返回空）
+        if not matrix_hit:
+            for kw in _fallback_keywords(code_path):
+                for rel in actual_artifacts:
+                    if kw and kw in rel:
+                        affected.append(rel)
     # 去重、去重名产物、排序
     seen = set()
     result: List[str] = []
@@ -1026,6 +1040,58 @@ def _map_code_to_artifacts(
         seen.add(a)
         result.append(a)
     return sorted(result)
+
+
+# 代码路径中不参与关键词匹配的通用目录/文件名（避免 src/lib/app 等过度匹配）
+_FALLBACK_STOPWORDS = {
+    "src",
+    "lib",
+    "app",
+    "apps",
+    "test",
+    "tests",
+    "spec",
+    "specs",
+    "node_modules",
+    "dist",
+    "build",
+    "public",
+    "assets",
+    "config",
+    "conf",
+    "core",
+    "common",
+    "utils",
+    "util",
+    "helpers",
+    "helper",
+    "components",
+    "index",
+    "main",
+}
+
+
+def _fallback_keywords(code_path: str) -> List[str]:
+    """从代码文件路径提取用于匹配产物路径的关键词。
+
+    取路径各段（去扩展名）与文件名 stem，过滤通用词，返回去重后的关键词列表。
+    如 "src/auth/login.py" → ["auth", "login"]；"src/utils/date.py" → ["date"]。
+    """
+    parts = code_path.replace(os.sep, "/").split("/")
+    kws: List[str] = []
+    for part in parts:
+        stem = re.sub(r"\.[A-Za-z0-9]+$", "", part).strip()
+        if not stem or stem in _FALLBACK_STOPWORDS:
+            continue
+        kws.append(stem)
+    # 去重保持顺序
+    seen = set()
+    result = []
+    for kw in kws:
+        if kw not in seen:
+            seen.add(kw)
+            result.append(kw)
+    return result
 
 
 def _now_iso() -> str:
