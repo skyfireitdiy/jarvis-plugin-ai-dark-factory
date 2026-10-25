@@ -392,6 +392,58 @@ def test_analyze_sync_diff_up_to_date(tmp_path):
     assert r["data"]["changed_files"] == []
 
 
+def test_analyze_sync_diff_fallback_without_matrix(tmp_path):
+    """矩阵缺失时回退到代码路径关键词匹配实际产物（不返回空）。"""
+    import subprocess
+
+    proj = _make_git_project(tmp_path)
+    api.record_sync_baseline(proj)
+    # 删除矩阵文件，模拟矩阵缺失
+    matrix = os.path.join(proj, "_reversa_sdd", "traceability", "code-spec-matrix.md")
+    os.remove(matrix)
+    # 创建实际产物 sdd/auth/requirements.md（关键词 auth 匹配 src/auth.py）
+    auth_dir = os.path.join(proj, "_reversa_sdd", "sdd", "auth")
+    os.makedirs(auth_dir, exist_ok=True)
+    with open(os.path.join(auth_dir, "requirements.md"), "w", encoding="utf-8") as f:
+        f.write("# Auth Requirements\n\n🟡INFERRED 登录接口。\n")
+    # 修改 src/auth.py（矩阵缺失 → 回退命中 sdd/auth/requirements.md）
+    with open(os.path.join(proj, "src", "auth.py"), "a", encoding="utf-8") as f:
+        f.write("def reset():\n    pass\n")
+    subprocess.run(["git", "-C", proj, "add", "-A"], check=True)
+    subprocess.run(["git", "-C", proj, "commit", "-q", "-m", "add reset"], check=True)
+
+    r = api.analyze_sync_diff(proj)
+    assert r["success"] is True
+    d = r["data"]
+    assert d["up_to_date"] is False
+    assert "sdd/auth/requirements.md" in d["affected_artifacts"]
+
+
+def test_analyze_sync_diff_fallback_matrix_no_match(tmp_path):
+    """矩阵存在但变更代码不在矩阵中 → 回退关键词匹配实际产物。"""
+    import subprocess
+
+    proj = _make_git_project(tmp_path)
+    api.record_sync_baseline(proj)
+    # 创建实际产物 sdd/report/requirements.md（矩阵里没有 report 相关行）
+    report_dir = os.path.join(proj, "_reversa_sdd", "sdd", "report")
+    os.makedirs(report_dir, exist_ok=True)
+    with open(os.path.join(report_dir, "requirements.md"), "w", encoding="utf-8") as f:
+        f.write("# Report Requirements\n\n🟡INFERRED 报表导出。\n")
+    # 新增 src/report.py（矩阵无此文件 → 回退命中 sdd/report/requirements.md）
+    (proj / "src" / "report.py").write_text(
+        "def export():\n    pass\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "-C", proj, "add", "-A"], check=True)
+    subprocess.run(["git", "-C", proj, "commit", "-q", "-m", "add report"], check=True)
+
+    r = api.analyze_sync_diff(proj)
+    assert r["success"] is True
+    d = r["data"]
+    assert d["up_to_date"] is False
+    assert "sdd/report/requirements.md" in d["affected_artifacts"]
+
+
 def test_get_sync_status_baseline_pending(tmp_path):
     """无基线但有产物且是 git 仓库 → baseline_pending=True（可自动补录）。"""
     proj = _make_git_project(tmp_path)
