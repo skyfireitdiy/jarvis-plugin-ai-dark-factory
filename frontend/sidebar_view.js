@@ -1687,13 +1687,13 @@ export default {
         <button @click="addProject" :disabled="busy"
           style="padding:4px 10px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">添加</button>
       </div>
-      <div v-if="dirs.length" style="display:flex;flex-wrap:wrap;gap:4px;">
-        <span v-for="d in dirs" :key="d" @click="selectProject(d)"
+      <div v-if="dirs.length" style="display:flex;flex-direction:column;gap:2px;">
+        <div v-for="d in dirs" :key="d" @click="selectProject(d)"
           :title="d"
-          :style="{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 6px',borderRadius:'10px',cursor:'pointer',fontSize:'11px',maxWidth:'180px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',background: d === projectDir ? '#1f6feb' : '#2d2d2d', color: d === projectDir ? '#fff' : '#aaa'}">
-          {{ d }}
-          <span @click.stop="removeProject(d)" style="color:inherit;opacity:.7;">×</span>
-        </span>
+          :style="{display:'flex',alignItems:'center',gap:'4px',padding:'3px 6px',borderRadius:'4px',cursor:'pointer',fontSize:'11px',lineHeight:'1.4',background: d === projectDir ? '#1f6feb' : '#2d2d2d', color: d === projectDir ? '#fff' : '#aaa'}">
+          <span style="flex:1;min-width:0;whiteSpace:'normal';wordBreak:'break-all';">{{ d }}</span>
+          <span @click.stop="removeProject(d)" style="color:inherit;opacity:.7;flex-shrink:0;">×</span>
+        </div>
       </div>
     </div>
     <!-- ② 逆向分析 -->
