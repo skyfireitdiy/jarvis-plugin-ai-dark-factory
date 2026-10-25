@@ -12,7 +12,7 @@
 | 🔄 知识回流 | 正向流水线 `dark-factory-pipeline` 末尾内置 `sync` 阶段：门禁通过后把代码变更增量回流到 `_reversa_sdd/` 规格，文档与代码同步 |
 | 🔍 规格逆向工程 | 对遗留项目执行 Reversa 逆向分析，生成 `_reversa_sdd/` 结构化规格（inventory / domain / architecture / sdd / traceability，带置信度标记 🟢CONFIRMED / 🟡INFERRED / 🔴GAP） |
 | 📚 Rule 知识库导出 | 把逆向产物导出为 Jarvis rule（每产物一 rule、覆盖式更新、metadata 溯源），供后续开发直接引用 |
-| 🔁 知识回流 sync | 基线记录 + git diff 差异分析 + traceability 矩阵映射受影响产物，文档与代码同步维护 |
+| 🔁 知识回流 sync | 基线记录 + git diff 差异分析 + traceability 矩阵映射受影响产物（矩阵缺失/未命中时回退代码路径关键词匹配），文档与代码同步维护；侧边栏「回流」按钮一键创建 Agent 增量更新文档 |
 | 📐 规则集 | `rules/` 提供 spec_writing / tdd_iron_rule / orchestration / holdout_discipline 四条铁律 |
 | 🛠️ 工具集 | `tools/` 提供 holdout_generator（隐藏验收场景）、gate_calculator（门禁指标）、reversa（逆向分析生命周期） |
 | ⚙️ 编排引擎 | 通过 `orchestration` 扩展点注册两条流水线模板，配合 `pipeline_runner` 驱动多 Agent 流水线 |
