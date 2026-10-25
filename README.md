@@ -12,7 +12,7 @@
 | 🔄 知识回流 | 正向流水线 `dark-factory-pipeline` 末尾内置 `sync` 阶段：门禁通过后把代码变更增量回流到 `_reversa_sdd/` 规格，文档与代码同步 |
 | 🔍 规格逆向工程 | 对遗留项目执行 Reversa 逆向分析，生成 `_reversa_sdd/` 结构化规格（inventory / domain / architecture / sdd / traceability，带置信度标记 🟢CONFIRMED / 🟡INFERRED / 🔴GAP） |
 | 📚 Rule 知识库导出 | 把逆向产物导出为 Jarvis rule（每产物一 rule、覆盖式更新、metadata 溯源），供后续开发直接引用 |
-| 🔁 知识回流 sync | 基线记录 + git diff 差异分析 + traceability 矩阵映射受影响产物，文档与代码同步维护 |
+| 🔁 知识回流 sync | 基线记录 + git diff 差异分析 + traceability 矩阵映射受影响产物（矩阵缺失/未命中时回退代码路径关键词匹配），文档与代码同步维护；侧边栏「回流」按钮一键创建 Agent 增量更新文档 |
 | 📐 规则集 | `rules/` 提供 spec_writing / tdd_iron_rule / orchestration / holdout_discipline 四条铁律 |
 | 🛠️ 工具集 | `tools/` 提供 holdout_generator（隐藏验收场景）、gate_calculator（门禁指标）、reversa（逆向分析生命周期） |
 | ⚙️ 编排引擎 | 通过 `orchestration` 扩展点注册两条流水线模板，配合 `pipeline_runner` 驱动多 Agent 流水线 |
@@ -52,7 +52,7 @@ jarvis --list-plugins   # 确认 ai-dark-factory 插件已注册
 
 1. **逆向分析**：在侧边栏项目目录上右键，选择「创建 Agent 执行规格逆向分析」（或「在当前 Agent 中执行」），对目标项目执行 Reversa 逆向分析，生成 `_reversa_sdd/` 结构化规格；逆向是一次性的，无需每次开发都跑；
 2. **正向开发**：让 Agent 使用 `pipeline_runner` 工具，配合 `orchestration/dark_factory_pipeline.yaml` 模板动态生成编排文件执行——NLSpec 中直接引用逆向产物路径（如 `_reversa_sdd/architecture.md`），Agent 自行读取；
-3. **知识回流**：正向流水线末尾内置 `sync` 阶段（门禁通过后执行，无基线时自动跳过），记录基线、分析代码变更对产物的影响并增量更新，保持文档与代码同步。基线在逆向分析产生产物后由侧边栏自动记录（无需手动点击），手动「记录基线」按钮仅作兜底/重置。
+3. **知识回流**：正向流水线末尾内置 `sync` 阶段（门禁通过后执行，无基线时自动跳过），记录基线、分析代码变更对产物的影响并增量更新，保持文档与代码同步。基线在逆向分析产生产物后由侧边栏自动记录（无需手动点击），手动「记录基线」按钮仅作兜底/重置。受影响产物清单由 traceability 矩阵映射；矩阵缺失或未命中时回退「代码路径关键词匹配实际产物」推断（带 🟡INFERRED 标记）。侧边栏「回流」按钮可一键创建 Agent 执行文档增量更新：先跑差异分析，再对候选产物逐个确认后更新（清单为启发式候选，不机械全量更新）。
 
 ### 3. 直接驱动编排
 让 Agent 使用 `pipeline_runner` 工具，配合插件自带的 `orchestration/dark_factory_pipeline.yaml`（六阶段 + 末尾 sync 回流）模板动态生成编排文件执行。
@@ -62,7 +62,7 @@ jarvis --list-plugins   # 确认 ai-dark-factory 插件已注册
 在「现存资料库」区块可为当前项目添加文档/网页/目录参考资料（仅存于浏览器 localStorage，按节点+项目隔离），反构时这些资料会注入任务提示词供 Agent 参考。
 在「NLSpec 管理」区块可扫描当前项目 `.jarvis/.df/specs/` 固定目录下的 NLSpec（每功能一个 `<功能名>.md`），客观校验四要素（Goal/Constraints/Interfaces/Non-goals）小节标题是否齐全并提示缺口；「打开」在宿主编译器中打开该 spec 文件，「新建/编辑」会创建 Agent 跑 `<dark-factory/clarify>` 澄清流程（编辑以现有 spec 为输入补齐缺口），「开启」会创建 Agent 基于该 spec 跑 `<dark-factory/run>` 黑灯工厂流水线。
 
-按钮按前置条件自动禁用（灰色，悬停显示原因）：未安装 Reversa 时「开始逆向」不可用；项目目录不存在时安装/新建等操作不可用；无产物时「导出 Rules」不可用；非 git 仓库或无基线时「记录基线/分析差异」不可用；NLSpec 四要素不齐时「开启」不可用。基线在逆向分析完成后自动记录（无需手动点击），「记录基线」按钮仅作兜底/重置。前置条件由后端 `check_project`（目录存在性、是否 git 仓库）与 `get_status`/`list_artifacts` 共同判定。
+按钮按前置条件自动禁用（灰色，悬停显示原因）：未安装 Reversa 时「开始逆向」不可用；项目目录不存在时安装/新建等操作不可用；无产物时「导出 Rules」不可用；非 git 仓库或无基线时「记录基线/分析差异/回流」不可用；NLSpec 四要素不齐时「开启」不可用。基线在逆向分析完成后自动记录（无需手动点击），「记录基线」按钮仅作兜底/重置。前置条件由后端 `check_project`（目录存在性、是否 git 仓库）与 `get_status`/`list_artifacts` 共同判定。
 
 ## 插件结构
 ```

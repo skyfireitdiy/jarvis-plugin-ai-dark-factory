@@ -310,6 +310,23 @@ export default {
       if (this.syncBusy) return "处理中…";
       return "";
     },
+    // 是否可回流：已安装 + git 仓库 + 已有基线
+    canSyncBackfill() {
+      return (
+        this.installed &&
+        this.isGitRepo &&
+        !!(this.syncStatus && this.syncStatus.has_baseline) &&
+        !this.syncBusy
+      );
+    },
+    // 回流被禁用的原因
+    syncBackfillBlockReason() {
+      if (!this.installed) return "请先安装 Reversa 工作区";
+      if (!this.isGitRepo) return "项目不是 git 仓库，无法回流文档";
+      if (!(this.syncStatus && this.syncStatus.has_baseline)) return "请先「记录基线」";
+      if (this.syncBusy) return "处理中…";
+      return "";
+    },
     // 当前阶段索引（-1 表示未开始/未知）
     currentPhaseIndex() {
       if (!this.status || !Array.isArray(this.status.completed)) return -1;
@@ -1409,6 +1426,79 @@ export default {
         this.syncBusy = false;
       }
     },
+    // 知识回流：创建 Agent 把基线到当前 HEAD 的代码变更增量更新到规格产物（df_sync 职责）
+    async doSyncBackfill() {
+      if (!this.projectDir) {
+        this.error = "请先选择项目目录";
+        return;
+      }
+      if (!this.installed) {
+        this.error = "请先安装 Reversa 工作区";
+        return;
+      }
+      if (!this.isGitRepo) {
+        this.error = "项目不是 git 仓库，无法回流文档";
+        return;
+      }
+      if (!(this.syncStatus && this.syncStatus.has_baseline)) {
+        this.error = "请先「记录基线」再回流";
+        return;
+      }
+      const openModal =
+        typeof window !== "undefined" && window.__jarvisOpenCreateAgentModal;
+      const create =
+        typeof window !== "undefined" && window.__jarvisCreateAgentForTask;
+      if (typeof openModal !== "function" && typeof create !== "function") {
+        this.message = "宿主未提供创建通道，无法创建 Agent";
+        return;
+      }
+      this.syncBusy = true;
+      this.error = "";
+      this.message = "";
+      const task = [
+        `请对项目 ${this.projectDir} 执行知识回流（文档与代码同步）。`,
+        "",
+        "一、用 reversa 工具（action=sync_diff, project_dir=<工作目录>）分析基线 commit 到当前 HEAD 的代码变更，",
+        "  得到受影响产物清单。注意：该清单是启发式候选（可能误报/漏报），不能机械全量更新。",
+        "二、对每个候选产物：用 read_artifact / read_code 读取产物内容与对应代码变更（git diff / 源码），",
+        "  逐个确认是否真的需要更新；不需要的跳过，需要的新增/修正对应章节。",
+        "三、增量更新规格文档：新增/修改的接口、模块、业务规则补进对应产物；",
+        "  遵守 non-destructive 原则：不删除已有产物内容，只追加/修正。",
+        "四、新增/修改内容默认标 🟡INFERRED（未经完整验证）；确认无误可升级 🟢CONFIRMED；",
+        "  代码新增但规格未覆盖的部分标 🔴GAP 提示用户补充。",
+        "五、同步完成后用 reversa 工具（action=sync_baseline）更新基线，",
+        "  再用 reversa 工具（action=export_rules）重新导出 rule 知识库。",
+        "",
+        "行事准则：只读 git（rev-parse/diff），不修改代码仓库；幂等，重复同步不产生副作用。",
+      ].join("\n");
+      const prefill = {
+        workingDir: this.projectDir,
+        task: task,
+        name: "知识回流（文档同步）",
+        nodeId: this.nodeId,
+      };
+      try {
+        if (typeof openModal === "function") {
+          const res = await openModal(prefill);
+          if (res && res.confirmed) {
+            this.message = "已创建 Agent 执行知识回流";
+          } else {
+            this.message = "已取消";
+          }
+        } else {
+          const res = await create(prefill);
+          if (res && res.success) {
+            this.message = "已创建 Agent 执行知识回流";
+          } else {
+            this.message = "失败: " + ((res && res.error) || "创建失败");
+          }
+        }
+      } catch (e) {
+        this.message = "失败: " + String((e && e.message) || e);
+      } finally {
+        this.syncBusy = false;
+      }
+    },
     // 自动补录知识回流基线：产物已生成且是 git 仓库但尚无基线时静默记录（无需用户手动点）
     async ensureBaseline() {
       if (!this.projectDir || !this.installed) return;
@@ -1829,6 +1919,11 @@ export default {
           :title="analyzeSyncBlockReason || '分析基线到当前 HEAD 的代码变更对产物的影响'"
           :style="{padding:'2px 8px',background:'#2d2d2d',color: canAnalyzeSync ? '#ddd' : '#777',border:'1px solid #444',borderRadius:'4px',cursor: canAnalyzeSync ? 'pointer' : 'not-allowed',fontSize:'11px'}">
           {{ syncBusy ? '处理中…' : '分析差异' }}
+        </button>
+        <button @click="doSyncBackfill" :disabled="!canSyncBackfill"
+          :title="syncBackfillBlockReason || '把基线到当前 HEAD 的代码变更增量更新到规格产物'"
+          :style="{padding:'2px 8px',background:'#2d2d2d',color: canSyncBackfill ? '#ddd' : '#777',border:'1px solid #444',borderRadius:'4px',cursor: canSyncBackfill ? 'pointer' : 'not-allowed',fontSize:'11px'}">
+          {{ syncBusy ? '处理中…' : '回流' }}
         </button>
       </div>
       <div v-if="syncStatus && (syncStatus.changed_artifacts.length || syncStatus.added_artifacts.length || syncStatus.removed_artifacts.length)"
