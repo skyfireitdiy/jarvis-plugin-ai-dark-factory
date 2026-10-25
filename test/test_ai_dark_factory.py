@@ -428,3 +428,66 @@ class TestPluginConfig:
         cfg = self._load(plugin_dir)
         tmpl = cfg["replace_map"]["dark-factory/clarify"]["template"]
         assert "set_nlspec_status" not in tmpl, "clarify 模板不应引导标记 completed"
+
+    # ---- NLSpec: inject-reversa-context（开发前读取逆向文档）----
+
+    _ALL_TEMPLATES = [
+        "dark-factory/clarify",
+        "dark-factory/run",
+        "dark-factory/quick",
+        "dark-factory/issue",
+        "dark-factory/pr",
+    ]
+
+    @staticmethod
+    def _operation_steps(tmpl):
+        """提取「你必须执行的操作」之后的步骤编号列表。"""
+        import re
+
+        marker = "你必须执行的操作"
+        idx = tmpl.find(marker)
+        assert idx != -1, "模板缺少「你必须执行的操作」"
+        body = tmpl[idx:]
+        steps = []
+        for line in body.splitlines():
+            m = re.match(r"^\s*(\d+)\.\s", line)
+            if m:
+                steps.append(int(m.group(1)))
+        return steps
+
+    def test_all_templates_have_reversa_read_step(self, plugin_dir):
+        """5 个模板的操作步骤均含「读取逆向文档」且引用 _reversa_sdd/。"""
+        cfg = self._load(plugin_dir)
+        for key in self._ALL_TEMPLATES:
+            tmpl = cfg["replace_map"][key]["template"]
+            assert "读取逆向文档" in tmpl, f"{key} 模板缺少「读取逆向文档」步骤"
+            assert "_reversa_sdd/" in tmpl, f"{key} 模板未引用 _reversa_sdd/"
+
+    def test_all_templates_have_reversa_rule(self, plugin_dir):
+        """5 个模板的规则部分均含「开发前先检查项目根目录是否存在 _reversa_sdd/」约束。"""
+        cfg = self._load(plugin_dir)
+        for key in self._ALL_TEMPLATES:
+            tmpl = cfg["replace_map"][key]["template"]
+            assert "开发前先检查项目根目录是否存在 _reversa_sdd/" in tmpl, (
+                f"{key} 模板缺少 _reversa_sdd/ 检查约束"
+            )
+
+    def test_all_templates_steps_numbering_continuous(self, plugin_dir):
+        """5 个模板的操作步骤编号连续无重复。"""
+        cfg = self._load(plugin_dir)
+        for key in self._ALL_TEMPLATES:
+            tmpl = cfg["replace_map"][key]["template"]
+            steps = self._operation_steps(tmpl)
+            assert steps, f"{key} 模板没有操作步骤"
+            assert steps == list(range(1, len(steps) + 1)), (
+                f"{key} 模板步骤编号不连续: {steps}"
+            )
+
+    def test_pipeline_invariants_mentions_reversa_read(self, plugin_dir):
+        """pipeline_invariants.md 不变量清单含「读取逆向文档」条目，YAML 头 description 提及。"""
+        path = plugin_dir / "rules" / "pipeline_invariants.md"
+        assert path.is_file(), "pipeline_invariants.md 不存在"
+        text = path.read_text(encoding="utf-8")
+        assert "读取逆向文档" in text, "不变量清单缺少「读取逆向文档」条目"
+        # YAML 头 description 提及该不变量
+        assert "读取逆向文档" in text.split("---")[1], "YAML 头 description 未提及读取逆向文档"

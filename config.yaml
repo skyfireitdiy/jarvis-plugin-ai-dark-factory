@@ -48,6 +48,8 @@ replace_map:
       请先澄清以下需求，直到 NLSpec 清晰、可开工，再进入黑灯工厂流水线。
       ## 你必须遵守的规则
       - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、固定 spec 目录等）。
+      - **必须**：开发前先检查项目根目录是否存在 _reversa_sdd/（Reversa 逆向规格产物）；
+        若存在，先 read_code 读取相关逆向文档作为开发依据；未做过逆向（无 _reversa_sdd/）则跳过。
       - **必须**：先用 LLM 能力通读需求，识别 NLSpec 四要素（Goal/Constraints/
         Interfaces/Non-goals）中缺失、模糊或自相矛盾的部分，形成问题清单。
       - **必须**：逐条向用户提问（一次问清一批，不要挤牙膏），把用户回答整理进
@@ -58,9 +60,13 @@ replace_map:
       ## 你必须执行的操作
       1. 通读需求，对照四要素诊断缺口（缺哪个要素、哪里模糊、哪里矛盾）。
       2. 向用户逐条提问补齐缺口；用户回答后更新 NLSpec。
-      3. 复验四要素完整、约束显式、接口精确、Non-goals 明确后，把最终 NLSpec
+      3. 读取逆向文档：检查项目根目录是否存在 _reversa_sdd/；若存在，read_code
+        读取 architecture.md / domain.md / inventory.md 及改动涉及模块的
+        requirements.md / design.md / tasks.md，把其中的约束、接口、边界条件
+        提炼进 NLSpec（Constraints/Interfaces 小节）或编排文件 spec 字段。
+      4. 复验四要素完整、约束显式、接口精确、Non-goals 明确后，把最终 NLSpec
         与澄清问答写入 .jarvis/.df/specs/<功能名>.md。
-      4. 确认无歧义后，引导进入 <dark-factory/run> 开始开发。
+      5. 确认无歧义后，引导进入 <dark-factory/run> 开始开发。
     description: 澄清需求直到 NLSpec 清晰可开工
   dark-factory/run:
     append: false
@@ -69,6 +75,8 @@ replace_map:
       ## 你必须遵守的规则
       - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、遵守规则集、
         在已有代码库工作、TDD 铁律、固定 spec 目录、知识回流、门禁人工审批、holdout 隔离纪律）。
+      - **必须**：开发前先检查项目根目录是否存在 _reversa_sdd/（Reversa 逆向规格产物）；
+        若存在，先 read_code 读取相关逆向文档作为开发依据；未做过逆向（无 _reversa_sdd/）则跳过。
       - **必须**：编排文件是每次任务动态生成的「结构化 plan」：根据 spec 与
         代码库现状，和用户共同讨论出编排文件（agents + flow），用户确认后再执行。
       - **必须**：门禁阶段停住，把审批报告交人工审批，不自动合并。
@@ -77,17 +85,21 @@ replace_map:
       1. 确认/补全 NLSpec：先 read_code 读取固定 NLSpec 文件
         .jarvis/.df/specs/<功能名>.md（若存在）；四要素不齐或模糊时，先向用户
         逐条提问澄清，更新后再复验。
-      2. 与用户讨论，动态生成编排文件（含 agents + flow，参考插件自带
+      2. 读取逆向文档：检查项目根目录是否存在 _reversa_sdd/；若存在，read_code
+        读取 architecture.md / domain.md / inventory.md 及改动涉及模块的
+        requirements.md / design.md / tasks.md，把其中的约束、接口、边界条件
+        提炼进 NLSpec（Constraints/Interfaces 小节）或编排文件 spec 字段。
+      3. 与用户讨论，动态生成编排文件（含 agents + flow，参考插件自带
         orchestration/dark_factory_pipeline.yaml 模板），把 NLSpec 内容写入
         编排文件顶层 spec 字段（引擎据此注入各阶段 Agent 背景），落盘到
         .jarvis/.df/pipeline.yaml，用户确认编排文件无误。
-      3. 调用 pipeline_runner 工具，参数：
+      4. 调用 pipeline_runner 工具，参数：
          - orchestration_file=<动态生成的编排文件路径>
          - working_dir=<工作目录>
          - approve=false（门禁停住，等人工审批）
-      4. 流水线跑完后，把审批报告路径与各阶段结果呈现给用户，交人工审批。
-      5. 人工审批通过后（approve=true 重跑门禁确认）再决定是否提交/合并。
-      6. 人工审批通过后，调用 set_nlspec_status 工具把对应 NLSpec
+      5. 流水线跑完后，把审批报告路径与各阶段结果呈现给用户，交人工审批。
+      6. 人工审批通过后（approve=true 重跑门禁确认）再决定是否提交/合并。
+      7. 人工审批通过后，调用 set_nlspec_status 工具把对应 NLSpec
         .jarvis/.df/specs/<功能名>.md 标记为 completed（by=agent）。
     description: 用内置编排引擎跑完整黑灯工厂流水线
   dark-factory/quick:
@@ -97,21 +109,27 @@ replace_map:
       ## 你必须遵守的规则
       - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、遵守规则集、
         在已有代码库工作、TDD 铁律、固定 spec 目录、知识回流、门禁人工审批）。
+      - **必须**：开发前先检查项目根目录是否存在 _reversa_sdd/（Reversa 逆向规格产物）；
+        若存在，先 read_code 读取相关逆向文档作为开发依据；未做过逆向（无 _reversa_sdd/）则跳过。
       - **必须**：开发完成后执行知识回流，保持 _reversa_sdd/ 规格文档与代码同步。
       - **禁止**：跳过测试直接交付。
       ## 你必须执行的操作
       1. 确认/补全 NLSpec：先 read_code 读取固定 NLSpec 文件
         .jarvis/.df/specs/<功能名>.md（若存在）；四要素不齐或模糊时，先向用户
         逐条提问澄清，更新后再复验。
-      2. 用 TDD 铁律实现：先写测试（红）→ 写实现（绿）→ 重构，遵守 tdd_iron_rule 规则。
-      3. 直接在当前代码库中修改代码，遵守 spec 的 Constraints，不越界实现 Non-goals。
-      4. 跑项目既有测试 + 新增测试，确认全部通过；不通过则修复到通过。
-      5. 执行知识回流：用 reversa 工具（action=sync_diff）分析基线到当前 HEAD 的
+      2. 读取逆向文档：检查项目根目录是否存在 _reversa_sdd/；若存在，read_code
+        读取 architecture.md / domain.md / inventory.md 及改动涉及模块的
+        requirements.md / design.md / tasks.md，把其中的约束、接口、边界条件
+        提炼进 NLSpec（Constraints/Interfaces 小节）或编排文件 spec 字段。
+      3. 用 TDD 铁律实现：先写测试（红）→ 写实现（绿）→ 重构，遵守 tdd_iron_rule 规则。
+      4. 直接在当前代码库中修改代码，遵守 spec 的 Constraints，不越界实现 Non-goals。
+      5. 跑项目既有测试 + 新增测试，确认全部通过；不通过则修复到通过。
+      6. 执行知识回流：用 reversa 工具（action=sync_diff）分析基线到当前 HEAD 的
         代码变更，增量更新 _reversa_sdd/ 规格产物（新增/修改内容标 🟡INFERRED，
         确认无误升级 🟢CONFIRMED，缺口标 🔴GAP），同步完成后用 reversa 工具
         （action=sync_baseline）更新基线，再用（action=export_rules）重新导出 rule 知识库。
-      6. 向用户汇报：改动清单（git diff 摘要）、测试结果、回流结果，交人工确认。
-      7. 开发完成（含知识回流）后，调用 set_nlspec_status 工具把对应 NLSpec
+      7. 向用户汇报：改动清单（git diff 摘要）、测试结果、回流结果，交人工确认。
+      8. 开发完成（含知识回流）后，调用 set_nlspec_status 工具把对应 NLSpec
         .jarvis/.df/specs/<功能名>.md 标记为 completed（by=agent）。
     description: 简化版黑灯工厂工作流（单 agent 直接干 + 知识回流）
   dark-factory/issue:
@@ -121,6 +139,8 @@ replace_map:
       ## 你必须遵守的规则
       - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、遵守规则集、
         在已有代码库工作、TDD 铁律、固定 spec 目录、知识回流、门禁人工审批、holdout 隔离纪律）。
+      - **必须**：开发前先检查项目根目录是否存在 _reversa_sdd/（Reversa 逆向规格产物）；
+        若存在，先 read_code 读取相关逆向文档作为开发依据；未做过逆向（无 _reversa_sdd/）则跳过。
       - **必须**：按 规划 → 生成隐藏场景 → 生成（TDD）→ 验证 → 回归 → 门禁
         六阶段推进，不跳阶段。
       - **必须**：编排文件是动态生成的「结构化 plan」，与用户讨论确认后再执行。
@@ -131,17 +151,21 @@ replace_map:
       1. 用 `gh issue view <number>` 读取目标 Issue，提取需求。
       2. 用 LLM 能力诊断 NLSpec 四要素缺口，向用户逐条提问澄清，更新后复验；
         最终 NLSpec 写入固定目录 .jarvis/.df/specs/<功能名>.md。
-      3. 与用户讨论，动态生成编排文件（agents + flow，参考
+      3. 读取逆向文档：检查项目根目录是否存在 _reversa_sdd/；若存在，read_code
+        读取 architecture.md / domain.md / inventory.md 及改动涉及模块的
+        requirements.md / design.md / tasks.md，把其中的约束、接口、边界条件
+        提炼进 NLSpec（Constraints/Interfaces 小节）或编排文件 spec 字段。
+      4. 与用户讨论，动态生成编排文件（agents + flow，参考
         orchestration/dark_factory_pipeline.yaml 模板），先 read_code 读取
         .jarvis/.df/specs/<功能名>.md 的 NLSpec 内容，写入编排文件顶层
         spec 字段（引擎据此注入各阶段 Agent 背景），落盘
         .jarvis/.df/pipeline.yaml，用户确认无误。
-      4. 调用 pipeline_runner 工具按 flow 顺序驱动六阶段流水线：
+      5. 调用 pipeline_runner 工具按 flow 顺序驱动六阶段流水线：
         planner 规划 → holdout 生成隐藏验收场景 → generator 写码（先写测试）
         → validator 用 holdout 评估（隔离）→ regression 跑既有测试防回归
         → orchestrator 计算门禁指标（gate 停住）。
-      5. 产出审批报告后交人工确认；通过后如需提交，用 gh 提交 PR。
-      6. 人工审批通过后，调用 set_nlspec_status 工具把对应 NLSpec
+      6. 产出审批报告后交人工确认；通过后如需提交，用 gh 提交 PR。
+      7. 人工审批通过后，调用 set_nlspec_status 工具把对应 NLSpec
         .jarvis/.df/specs/<功能名>.md 标记为 completed（by=agent）。
     description: 用黑灯工厂工作流开发 Issue 需求
   dark-factory/pr:
@@ -151,6 +175,8 @@ replace_map:
       ## 你必须遵守的规则
       - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、遵守规则集、
         在已有代码库工作、TDD 铁律、固定 spec 目录、知识回流、门禁人工审批、holdout 隔离纪律）。
+      - **必须**：开发前先检查项目根目录是否存在 _reversa_sdd/（Reversa 逆向规格产物）；
+        若存在，先 read_code 读取相关逆向文档作为开发依据；未做过逆向（无 _reversa_sdd/）则跳过。
       - **必须**：先读取 PR 的 diff 与关联 Issue，理解改动目标；改动对应的
         NLSpec 四要素不齐或模糊时，先向用户逐条提问澄清，更新后再复验。
       - **必须**：按 规划 → 生成隐藏场景 → 生成（TDD）→ 验证 → 回归 → 门禁
@@ -164,14 +190,18 @@ replace_map:
       1. 用 `gh pr view <number>` 读取 PR 详情，用 `gh pr diff <number>` 查看改动。
       2. 用 LLM 能力诊断改动对应的 NLSpec 四要素缺口，向用户逐条提问澄清，更新后复验；
         最终 NLSpec 写入固定目录 .jarvis/.df/specs/<功能名>.md。
-      3. 与用户讨论，动态生成编排文件（agents + flow，参考
+      3. 读取逆向文档：检查项目根目录是否存在 _reversa_sdd/；若存在，read_code
+        读取 architecture.md / domain.md / inventory.md 及改动涉及模块的
+        requirements.md / design.md / tasks.md，把其中的约束、接口、边界条件
+        提炼进 NLSpec（Constraints/Interfaces 小节）或编排文件 spec 字段。
+      4. 与用户讨论，动态生成编排文件（agents + flow，参考
         orchestration/dark_factory_pipeline.yaml 模板），先 read_code 读取
         .jarvis/.df/specs/<功能名>.md 的 NLSpec 内容，写入编排文件顶层
         spec 字段（引擎据此注入各阶段 Agent 背景），落盘
         .jarvis/.df/pipeline.yaml，用户确认无误。
-      4. 调用 pipeline_runner 工具按 flow 顺序驱动六阶段流水线：
+      5. 调用 pipeline_runner 工具按 flow 顺序驱动六阶段流水线：
         规划 → 生成隐藏场景 → 生成（补齐缺失实现/测试）→ 验证 → 回归 → 门禁（gate 停住）。
-      5. 产出审批报告交人工确认；通过后如需合并，用 `gh pr merge <number>`（先与用户确认）。
-      6. 人工审批通过后，调用 set_nlspec_status 工具把对应 NLSpec
+      6. 产出审批报告交人工确认；通过后如需合并，用 `gh pr merge <number>`（先与用户确认）。
+      7. 人工审批通过后，调用 set_nlspec_status 工具把对应 NLSpec
         .jarvis/.df/specs/<功能名>.md 标记为 completed（by=agent）。
     description: 用黑灯工厂工作流处理 PR
