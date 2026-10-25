@@ -47,3 +47,7 @@ htmlcov/
 # Jarvis 本地运行产物
 .jarviscache/
 .jarvis/
+
+# Reversa
+.reversa/config.user.toml
+_reversa_sdd/
