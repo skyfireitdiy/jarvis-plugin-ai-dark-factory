@@ -1670,6 +1670,13 @@ export default {
       <button @click="helpVisible = true" title="使用说明"
         style="background:none;border:none;color:#888;cursor:pointer;font-size:14px;">?</button>
     </div>
+    <!-- 全局刷新（唯一入口） -->
+    <div style="padding:6px 10px;border-bottom:1px solid #333;flex-shrink:0;">
+      <button @click="refresh" :disabled="busy || loading" title="刷新全部状态（工作区状态、产物、同步状态、依赖图）"
+        style="width:100%;padding:5px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:12px;">
+        {{ loading ? '加载中…' : '刷新' }}
+      </button>
+    </div>
     <!-- 使用说明：黑灯工厂完整闭环（可折叠） -->
     <div style="padding:6px 10px;border-bottom:1px solid #333;flex-shrink:0;">
       <div @click="guideVisible = !guideVisible"
@@ -1774,8 +1781,6 @@ export default {
         <span v-else-if="installed" style="color:#3fb950;">已安装 v{{ status.version }}</span>
         <span v-else style="color:#d29922;">未安装</span>
         <span style="flex:1;"></span>
-        <button @click="refresh" :disabled="busy" title="刷新"
-          style="padding:3px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">刷新</button>
       </div>
       <!-- 前置条件提示：项目目录不可用 / 非 git 仓库 -->
       <div v-if="!projectReady" style="padding:0 10px 6px;font-size:11px;color:#f85149;">
@@ -1812,10 +1817,6 @@ export default {
         <span>2.3 依赖图</span>
         <span style="font-size:10px;color:#666;">（箭头指向被依赖的上游）</span>
         <span style="flex:1;"></span>
-        <button @click="loadDepsGraph" :disabled="depsLoading" title="刷新依赖图"
-          style="padding:2px 8px;background:#2d2d2d;color:#ddd;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;">
-          {{ depsLoading ? '加载中…' : '刷新' }}
-        </button>
       </div>
       <div v-if="depsLayout" style="overflow:auto;margin-bottom:4px;">
         <svg :width="depsLayout.width" :height="depsLayout.height" style="display:block;">
