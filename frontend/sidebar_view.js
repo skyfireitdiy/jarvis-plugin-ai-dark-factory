@@ -757,7 +757,7 @@ export default {
         const prefill = {
           workingDir: dir,
           task: await this.buildAnalysisPrompt(dir),
-          name: `Reversa 逆向分析`,
+          name: `${baseName(dir)} - Reversa 逆向分析`,
           nodeId: this.nodeId,
         };
         if (typeof openModal === "function") {
@@ -877,7 +877,7 @@ export default {
       const prefill = {
         workingDir: this.projectDir,
         task: lines.join("\n"),
-        name: isEdit ? `NLSpec 澄清（${name}）` : "NLSpec 澄清（新建）",
+        name: `${baseName(this.projectDir)} - ${isEdit ? `NLSpec 澄清（${name}）` : "NLSpec 澄清（新建）"}`,
         nodeId: this.nodeId,
       };
       try {
@@ -1030,7 +1030,7 @@ export default {
       const prefill = {
         workingDir: this.projectDir,
         task: task,
-        name: `黑灯工厂（${name}）`,
+        name: `${baseName(this.projectDir)} - 黑灯工厂（${name}）`,
         nodeId: this.nodeId,
       };
       try {
@@ -1552,7 +1552,7 @@ export default {
       const prefill = {
         workingDir: this.projectDir,
         task: task,
-        name: "知识回流（文档同步）",
+        name: `${baseName(this.projectDir)} - 知识回流（文档同步）`,
         nodeId: this.nodeId,
       };
       try {
