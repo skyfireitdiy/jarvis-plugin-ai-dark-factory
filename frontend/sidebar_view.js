@@ -988,14 +988,17 @@ export default {
         this.error = "宿主未提供编辑器打开通道（__jarvisOpenFile）";
         return;
       }
-      const relPath = ".jarvis/.df/specs/" + name;
+      // 宿主 __jarvisOpenFile 按绝对路径解析（相对路径会退回按当前 agent 的
+      // working_dir 拼接：未打开 agent 时报「无法解析为绝对路径」，打开后路径错位）。
+      // 因此这里传绝对路径 <projectDir>/.jarvis/.df/specs/<name>，与 openArtifact 一致。
+      const absPath = `${this.projectDir.replace(/\/+$/, "")}/.jarvis/.df/specs/${name}`;
       try {
-        const res = await openFile(relPath, {
+        const res = await openFile(absPath, {
           nodeId: this.nodeId,
           workingDir: this.projectDir,
         });
         if (res && res.success) {
-          this.message = `已在编辑器中打开 ${relPath}`;
+          this.message = `已在编辑器中打开 ${absPath}`;
         } else {
           this.error = (res && res.error) || "在编辑器中打开失败";
         }
