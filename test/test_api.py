@@ -431,9 +431,8 @@ def test_analyze_sync_diff_fallback_matrix_no_match(tmp_path):
     with open(os.path.join(report_dir, "requirements.md"), "w", encoding="utf-8") as f:
         f.write("# Report Requirements\n\n🟡INFERRED 报表导出。\n")
     # 新增 src/report.py（矩阵无此文件 → 回退命中 sdd/report/requirements.md）
-    (proj / "src" / "report.py").write_text(
-        "def export():\n    pass\n", encoding="utf-8"
-    )
+    with open(os.path.join(proj, "src", "report.py"), "w", encoding="utf-8") as f:
+        f.write("def export():\n    pass\n")
     subprocess.run(["git", "-C", proj, "add", "-A"], check=True)
     subprocess.run(["git", "-C", proj, "commit", "-q", "-m", "add report"], check=True)
 
