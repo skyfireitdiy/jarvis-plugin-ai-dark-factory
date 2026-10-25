@@ -1038,6 +1038,15 @@ export default {
             "六、向用户汇报：改动清单（git diff 摘要）、测试结果、回流结果，交人工确认。",
             "",
             "行事准则：只读 git（rev-parse/diff），不修改代码仓库；幂等，重复同步不产生副作用。",
+            "",
+            "'<Pin>'",
+            "【流程不变量 - 必须始终牢记】",
+            "1. NLSpec 四要素先行：不齐或模糊先澄清，禁止无 Spec 开工。",
+            "2. 在已有代码库工作，不生成独立目录。",
+            "3. TDD 铁律：先写测试（红）→ 实现（绿）→ 重构。",
+            "4. 固定 spec 目录 .jarvis/.df/specs/<功能名>.md。",
+            "5. 开发完成后知识回流：sync_diff → sync_baseline → export_rules。",
+            "6. 门禁人工审批，不自动放行/合并。",
           ].join("\n")
         : [
             `请基于 NLSpec 对项目 ${this.projectDir} 执行黑灯工厂流水线（<dark-factory/run>）。`,
@@ -1046,6 +1055,15 @@ export default {
             "再与用户讨论动态生成编排文件（参考 orchestration/dark_factory_pipeline.yaml 模板），",
             "把 NLSpec 内容写入编排文件顶层 spec 字段，落盘到 .jarvis/.df/pipeline.yaml，用户确认后",
             "用 pipeline_runner 工具驱动流水线（approve=false，门禁停住交人工审批）。",
+            "",
+            "'<Pin>'",
+            "【流程不变量 - 必须始终牢记】",
+            "1. NLSpec 四要素先行：不齐或模糊先澄清，禁止无 Spec 开工。",
+            "2. 在已有代码库工作，不生成独立目录。",
+            "3. TDD 铁律：先写测试（红）→ 实现（绿）→ 重构。",
+            "4. 固定 spec 目录 .jarvis/.df/specs/<功能名>.md。",
+            "5. 开发完成后知识回流：sync_diff → sync_baseline → export_rules。",
+            "6. 门禁人工审批，不自动放行/合并。",
           ].join("\n");
       const prefill = {
         workingDir: this.projectDir,

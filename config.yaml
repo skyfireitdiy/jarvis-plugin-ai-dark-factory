@@ -47,6 +47,7 @@ replace_map:
     template: |
       请先澄清以下需求，直到 NLSpec 清晰、可开工，再进入黑灯工厂流水线。
       ## 你必须遵守的规则
+      - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、固定 spec 目录等）。
       - **必须**：先用 LLM 能力通读需求，识别 NLSpec 四要素（Goal/Constraints/
         Interfaces/Non-goals）中缺失、模糊或自相矛盾的部分，形成问题清单。
       - **必须**：逐条向用户提问（一次问清一批，不要挤牙膏），把用户回答整理进
@@ -66,15 +67,12 @@ replace_map:
     template: |
       请使用 AI 黑灯工厂流水线自动完成以下开发（用内置编排引擎 pipeline_runner 驱动）。
       ## 你必须遵守的规则
-      - **必须**：先确认 NLSpec 已就绪（四要素完整），否则先澄清——用 LLM 能力
-        向用户逐条提问补齐缺失/模糊要素，直到四要素完整再开工。
-      - **必须**：遵守 spec_writing / tdd_iron_rule / orchestration /
-        holdout_discipline 规则。
+      - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、遵守规则集、
+        在已有代码库工作、TDD 铁律、固定 spec 目录、知识回流、门禁人工审批、holdout 隔离纪律）。
       - **必须**：编排文件是每次任务动态生成的「结构化 plan」：根据 spec 与
         代码库现状，和用户共同讨论出编排文件（agents + flow），用户确认后再执行。
-      - **必须**：在已有代码库中工作——generator 直接修改现有代码，不生成到独立目录。
       - **必须**：门禁阶段停住，把审批报告交人工审批，不自动合并。
-      - **禁止**：没有 Spec 就开始实现；未经用户确认就执行编排；未经人工审批自动放行门禁。
+      - **禁止**：未经用户确认就执行编排；未经人工审批自动放行门禁。
       ## 你必须执行的操作
       1. 确认/补全 NLSpec：先 read_code 读取固定 NLSpec 文件
         .jarvis/.df/specs/<功能名>.md（若存在）；四要素不齐或模糊时，先向用户
@@ -95,12 +93,10 @@ replace_map:
     template: |
       请使用简化版黑灯工厂工作流完成以下开发（单 agent 直接干 + 知识回流，不启用多 agent 流水线编排）。
       ## 你必须遵守的规则
-      - **必须**：先确认 NLSpec 已就绪（四要素完整），否则先澄清——用 LLM 能力
-        向用户逐条提问补齐缺失/模糊要素，直到四要素完整再开工。
-      - **必须**：遵守 spec_writing / tdd_iron_rule 规则。
-      - **必须**：在已有代码库中工作——直接修改现有代码，不生成到独立目录。
+      - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、遵守规则集、
+        在已有代码库工作、TDD 铁律、固定 spec 目录、知识回流、门禁人工审批）。
       - **必须**：开发完成后执行知识回流，保持 _reversa_sdd/ 规格文档与代码同步。
-      - **禁止**：没有 Spec 就开始实现；跳过测试直接交付。
+      - **禁止**：跳过测试直接交付。
       ## 你必须执行的操作
       1. 确认/补全 NLSpec：先 read_code 读取固定 NLSpec 文件
         .jarvis/.df/specs/<功能名>.md（若存在）；四要素不齐或模糊时，先向用户
@@ -119,18 +115,14 @@ replace_map:
     template: |
       请使用 AI 黑灯工厂工作流开发以下需求（来自 GitHub Issue）。
       ## 你必须遵守的规则
-      - **必须**：先读取并理解 Issue，把需求转成合格的 NLSpec
-        （Goal/Constraints/Interfaces/Non-goals 四要素）；四要素不齐或模糊时，
-        先向用户逐条提问澄清，更新后再复验，直到清晰再开工。
-      - **必须**：遵守 spec_writing / tdd_iron_rule / orchestration /
-        holdout_discipline 规则。
+      - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、遵守规则集、
+        在已有代码库工作、TDD 铁律、固定 spec 目录、知识回流、门禁人工审批、holdout 隔离纪律）。
       - **必须**：按 规划 → 生成隐藏场景 → 生成（TDD）→ 验证 → 回归 → 门禁
         六阶段推进，不跳阶段。
       - **必须**：编排文件是动态生成的「结构化 plan」，与用户讨论确认后再执行。
-      - **必须**：在已有代码库中工作——generator 直接修改现有代码。
       - **必须**：holdout 场景只注入 validator，绝不注入 generator（隔离纪律）。
       - **必须**：门禁处输出结构化审批报告，交人工审批，不自动合并。
-      - **禁止**：没有 Spec 就开始实现；未经用户确认就执行编排。
+      - **禁止**：未经用户确认就执行编排。
       ## 你必须执行的操作
       1. 用 `gh issue view <number>` 读取目标 Issue，提取需求。
       2. 用 LLM 能力诊断 NLSpec 四要素缺口，向用户逐条提问澄清，更新后复验；
@@ -151,14 +143,13 @@ replace_map:
     template: |
       请使用 AI 黑灯工厂工作流处理以下 GitHub Pull Request。
       ## 你必须遵守的规则
+      - **必须**：遵守 pipeline_invariants 流程不变量规则（NLSpec 四要素先行、遵守规则集、
+        在已有代码库工作、TDD 铁律、固定 spec 目录、知识回流、门禁人工审批、holdout 隔离纪律）。
       - **必须**：先读取 PR 的 diff 与关联 Issue，理解改动目标；改动对应的
         NLSpec 四要素不齐或模糊时，先向用户逐条提问澄清，更新后再复验。
-      - **必须**：遵守 spec_writing / tdd_iron_rule / orchestration /
-        holdout_discipline 规则。
       - **必须**：按 规划 → 生成隐藏场景 → 生成（TDD）→ 验证 → 回归 → 门禁
         六阶段推进。
       - **必须**：编排文件是动态生成的「结构化 plan」，与用户讨论确认后再执行。
-      - **必须**：在已有代码库中工作——generator 直接修改现有代码。
       - **必须**：holdout 场景只注入 validator，绝不注入 generator（隔离纪律）。
       - **必须**：门禁处输出审批报告（各场景通过率、失败详情、
         改动 diff 摘要），交人工审批。
