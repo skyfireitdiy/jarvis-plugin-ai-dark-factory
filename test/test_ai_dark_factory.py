@@ -12,6 +12,7 @@
 
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -55,6 +56,11 @@ def gate_calculator(plugin_dir):
     return _load_tool_class(plugin_dir, "df_gate_calculator", "gate_calculator.py")()
 
 
+@pytest.fixture(scope="module")
+def set_nlspec_status_tool(plugin_dir):
+    return _load_tool_class(plugin_dir, "df_set_nlspec_status", "set_nlspec_status.py")()
+
+
 class TestToolInterface:
     """工具接口完备性（name/description/parameters/check/execute）。"""
 
@@ -63,6 +69,7 @@ class TestToolInterface:
         [
             ("holdout_generator", "holdout_generator.py"),
             ("gate_calculator", "gate_calculator.py"),
+            ("set_nlspec_status", "set_nlspec_status.py"),
         ],
     )
     def test_interface_complete(self, plugin_dir, tool_name, filename):
@@ -147,6 +154,71 @@ class TestGateCalculator:
     def test_missing_results(self, gate_calculator):
         r = gate_calculator.execute({})
         assert r["success"] is False
+
+
+class TestSetNlspecStatusTool:
+    """set_nlspec_status agent 工具（自动标记 NLSpec 完成状态）。"""
+
+    def _make_proj(self, tmp_path):
+        proj = tmp_path / "nlspecproj"
+        specs = proj / ".jarvis" / ".df" / "specs"
+        specs.mkdir(parents=True)
+        (specs / "auth.md").write_text(
+            "# 登录功能\n\n## Goal\n实现登录。\n", encoding="utf-8"
+        )
+        return str(proj)
+
+    def test_mark_completed_by_agent(self, set_nlspec_status_tool, tmp_path):
+        """agent 调用标记 completed，by=agent，写入 history。"""
+        proj = self._make_proj(tmp_path)
+        r = set_nlspec_status_tool.execute(
+            {"project_dir": proj, "name": "auth.md", "status": "completed"}
+        )
+        assert r["success"] is True
+        out = json.loads(r["stdout"])
+        assert out["success"] is True
+        assert out["data"] == {"name": "auth.md", "status": "completed"}
+        text = open(
+            os.path.join(proj, ".jarvis", ".df", "specs", "auth.md"), encoding="utf-8"
+        ).read()
+        assert "history:" in text
+        assert "by: agent" in text
+
+    def test_mark_completed_by_explicit(self, set_nlspec_status_tool, tmp_path):
+        """显式传 by=manual 时透传。"""
+        proj = self._make_proj(tmp_path)
+        r = set_nlspec_status_tool.execute(
+            {"project_dir": proj, "name": "auth.md", "status": "completed", "by": "manual"}
+        )
+        assert r["success"] is True
+        text = open(
+            os.path.join(proj, ".jarvis", ".df", "specs", "auth.md"), encoding="utf-8"
+        ).read()
+        assert "by: manual" in text
+
+    def test_missing_args(self, set_nlspec_status_tool):
+        """缺必填参数报错。"""
+        r = set_nlspec_status_tool.execute({})
+        assert r["success"] is False
+        assert "project_dir" in r["stderr"] or "name" in r["stderr"] or "status" in r["stderr"]
+
+    def test_invalid_status(self, set_nlspec_status_tool, tmp_path):
+        """非法状态报错（透传 api 错误语义）。"""
+        proj = self._make_proj(tmp_path)
+        r = set_nlspec_status_tool.execute(
+            {"project_dir": proj, "name": "auth.md", "status": "bogus"}
+        )
+        assert r["success"] is False
+        assert "状态" in r["stderr"]
+
+    def test_missing_file(self, set_nlspec_status_tool, tmp_path):
+        """文件不存在报错。"""
+        proj = self._make_proj(tmp_path)
+        r = set_nlspec_status_tool.execute(
+            {"project_dir": proj, "name": "missing.md", "status": "completed"}
+        )
+        assert r["success"] is False
+        assert "不存在" in r["stderr"]
 
 
 class TestOrchestrationTemplate:
@@ -327,3 +399,32 @@ class TestPluginConfig:
             tmpl = cfg["replace_map"][key]["template"]
             assert "read_code" in tmpl, f"{key} 模板未引导读取固定 spec"
             assert ".jarvis/.df/specs/" in tmpl, f"{key} 模板未引用固定 spec 目录"
+
+    def test_quick_template_marks_completed(self, plugin_dir):
+        """quick 模板末尾追加 set_nlspec_status 标记 completed 步骤。"""
+        cfg = self._load(plugin_dir)
+        tmpl = cfg["replace_map"]["dark-factory/quick"]["template"]
+        assert "set_nlspec_status" in tmpl, "quick 模板应引导调用 set_nlspec_status 工具"
+        assert "completed" in tmpl, "quick 模板应标记为 completed"
+        assert "by=agent" in tmpl, "quick 模板应传 by=agent"
+
+    def test_run_template_marks_completed_after_approval(self, plugin_dir):
+        """run 模板在人工审批通过后追加标记 completed 步骤。"""
+        cfg = self._load(plugin_dir)
+        tmpl = cfg["replace_map"]["dark-factory/run"]["template"]
+        assert "set_nlspec_status" in tmpl, "run 模板应引导调用 set_nlspec_status 工具"
+        assert "by=agent" in tmpl, "run 模板应传 by=agent"
+
+    def test_issue_pr_templates_mark_completed_after_approval(self, plugin_dir):
+        """issue/pr 模板在人工审批通过后追加标记 completed 步骤。"""
+        cfg = self._load(plugin_dir)
+        for key in ["dark-factory/issue", "dark-factory/pr"]:
+            tmpl = cfg["replace_map"][key]["template"]
+            assert "set_nlspec_status" in tmpl, f"{key} 模板应引导调用 set_nlspec_status 工具"
+            assert "by=agent" in tmpl, f"{key} 模板应传 by=agent"
+
+    def test_clarify_template_does_not_mark_completed(self, plugin_dir):
+        """clarify 模板不追加标记 completed 指令（澄清阶段只产出 spec）。"""
+        cfg = self._load(plugin_dir)
+        tmpl = cfg["replace_map"]["dark-factory/clarify"]["template"]
+        assert "set_nlspec_status" not in tmpl, "clarify 模板不应引导标记 completed"

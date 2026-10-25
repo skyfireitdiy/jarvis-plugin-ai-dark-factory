@@ -87,6 +87,8 @@ replace_map:
          - approve=false（门禁停住，等人工审批）
       4. 流水线跑完后，把审批报告路径与各阶段结果呈现给用户，交人工审批。
       5. 人工审批通过后（approve=true 重跑门禁确认）再决定是否提交/合并。
+      6. 人工审批通过后，调用 set_nlspec_status 工具把对应 NLSpec
+        .jarvis/.df/specs/<功能名>.md 标记为 completed（by=agent）。
     description: 用内置编排引擎跑完整黑灯工厂流水线
   dark-factory/quick:
     append: false
@@ -109,6 +111,8 @@ replace_map:
         确认无误升级 🟢CONFIRMED，缺口标 🔴GAP），同步完成后用 reversa 工具
         （action=sync_baseline）更新基线，再用（action=export_rules）重新导出 rule 知识库。
       6. 向用户汇报：改动清单（git diff 摘要）、测试结果、回流结果，交人工确认。
+      7. 开发完成（含知识回流）后，调用 set_nlspec_status 工具把对应 NLSpec
+        .jarvis/.df/specs/<功能名>.md 标记为 completed（by=agent）。
     description: 简化版黑灯工厂工作流（单 agent 直接干 + 知识回流）
   dark-factory/issue:
     append: false
@@ -137,6 +141,8 @@ replace_map:
         → validator 用 holdout 评估（隔离）→ regression 跑既有测试防回归
         → orchestrator 计算门禁指标（gate 停住）。
       5. 产出审批报告后交人工确认；通过后如需提交，用 gh 提交 PR。
+      6. 人工审批通过后，调用 set_nlspec_status 工具把对应 NLSpec
+        .jarvis/.df/specs/<功能名>.md 标记为 completed（by=agent）。
     description: 用黑灯工厂工作流开发 Issue 需求
   dark-factory/pr:
     append: false
@@ -166,4 +172,6 @@ replace_map:
       4. 调用 pipeline_runner 工具按 flow 顺序驱动六阶段流水线：
         规划 → 生成隐藏场景 → 生成（补齐缺失实现/测试）→ 验证 → 回归 → 门禁（gate 停住）。
       5. 产出审批报告交人工确认；通过后如需合并，用 `gh pr merge <number>`（先与用户确认）。
+      6. 人工审批通过后，调用 set_nlspec_status 工具把对应 NLSpec
+        .jarvis/.df/specs/<功能名>.md 标记为 completed（by=agent）。
     description: 用黑灯工厂工作流处理 PR

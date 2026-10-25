@@ -924,7 +924,7 @@ export default {
       try {
         const payload = await callFunction(
           "set_nlspec_status",
-          { project_dir: this.projectDir, name, status },
+          { project_dir: this.projectDir, name, status, by: "manual" },
           this.nodeId,
         );
         if (payload && payload.success) {

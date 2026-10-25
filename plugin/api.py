@@ -469,21 +469,95 @@ def _nlspec_status(content: str) -> str:
     return "active"
 
 
-def _nlspec_set_status(content: str, status: str) -> str:
-    """把 status 写入/更新 frontmatter，返回新内容。"""
+def _nlspec_history(content: str) -> List[Dict[str, str]]:
+    """从 frontmatter 解析状态历史记录列表。
+
+    history 为固定格式（由 _nlspec_set_status 写入）：
+        history:
+          - at: "2026-10-25T22:30:00+08:00"
+            from: active
+            to: completed
+            by: agent
+    按行解析，返回 [{"at", "from", "to", "by"}, ...]；无 history 返回 []。
+    """
+    _, _, lines = _nlspec_frontmatter(content)
+    records: List[Dict[str, str]] = []
+    current: Dict[str, str] = {}
+    in_history = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "history:":
+            in_history = True
+            continue
+        if not in_history:
+            continue
+        # 新记录开始（"- at:" 或 "- at :"）
+        if stripped.startswith("- "):
+            if current:
+                records.append(current)
+            current = {}
+            stripped = stripped[2:].strip()
+        if not stripped:
+            continue
+        if ":" in stripped:
+            key, _, val = stripped.partition(":")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key in ("at", "from", "to", "by"):
+                current[key] = val
+    if current:
+        records.append(current)
+    return records
+
+
+def _nlspec_set_status(content: str, status: str, by: str = "manual") -> str:
+    """把 status 写入/更新 frontmatter，并追加一条状态历史记录，返回新内容。
+
+    history 记录形如：
+        history:
+          - at: "2026-10-25T22:30:00+08:00"
+            from: active
+            to: completed
+            by: agent
+    只追加不覆盖；无 frontmatter 时新建（含 status + history）。
+    """
     block, rest, lines = _nlspec_frontmatter(content)
     if not block:
-        return "---\nstatus: %s\n---\n\n%s" % (status, content)
+        return (
+            "---\n"
+            "status: %s\n"
+            "history:\n"
+            '  - at: "%s"\n'
+            "    from: active\n"
+            "    to: %s\n"
+            "    by: %s\n"
+            "---\n\n%s" % (status, _now_iso(), status, by, content)
+        )
+    old_status = _nlspec_status(content)
     new_lines = []
     replaced = False
+    has_history = False
     for line in lines:
         if line.strip().startswith("status:"):
             new_lines.append("status: %s" % status)
             replaced = True
+        elif line.strip() == "history:":
+            # 已有 history 块：保留原记录，在末尾追加新记录
+            has_history = True
+            new_lines.append(line)
+            continue
         else:
             new_lines.append(line)
     if not replaced:
         new_lines.append("status: %s" % status)
+    if not has_history:
+        # 无 history 块：新建
+        new_lines.append("history:")
+    # 追加新 history 记录（只追加不覆盖）
+    new_lines.append('  - at: "%s"' % _now_iso())
+    new_lines.append("    from: %s" % old_status)
+    new_lines.append("    to: %s" % status)
+    new_lines.append("    by: %s" % by)
     return "---\n" + "\n".join(new_lines) + "\n---" + rest
 
 
@@ -533,6 +607,7 @@ def list_nlspecs(project_dir: Optional[str] = None) -> Dict[str, Any]:
                     "name": name,
                     "title": _nlspec_title(content),
                     "status": _nlspec_status(content),
+                    "history": _nlspec_history(content),
                     "updated_at": stat.st_mtime,
                     "size": stat.st_size,
                 }
@@ -569,7 +644,7 @@ def get_nlspec(
     specs_dir = _nlspec_dir_path(project_dir)
     full = os.path.join(specs_dir, name)
     if not os.path.isfile(full):
-        return {"success": True, "data": {"name": name, "title": "", "content": "", "status": "active", "exists": False}}
+        return {"success": True, "data": {"name": name, "title": "", "content": "", "status": "active", "history": [], "exists": False}}
     try:
         with open(full, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
@@ -582,6 +657,7 @@ def get_nlspec(
             "title": _nlspec_title(content),
             "content": content,
             "status": _nlspec_status(content),
+            "history": _nlspec_history(content),
             "exists": True,
         },
     }
@@ -591,10 +667,13 @@ def set_nlspec_status(
     project_dir: Optional[str] = None,
     name: Optional[str] = None,
     status: Optional[str] = None,
+    by: str = "manual",
 ) -> Dict[str, Any]:
     """设置 NLSpec 状态（active/completed/deprecated）。
 
     状态写入 spec 文件 frontmatter（---\nstatus: xxx\n---），随文件走、git 可追踪。
+    by 为来源标记（agent=agent 工具调用 / manual=前端人工标记，默认 manual）；
+    每次成功变更在 frontmatter 追加一条 history 记录（at/from/to/by），只追加不覆盖。
     返回 {"success": True, "data": {name, status}}。
     """
     project_dir, err = _resolve_project(project_dir)
@@ -609,6 +688,7 @@ def set_nlspec_status(
             "success": False,
             "error": f"非法 NLSpec 状态: {status}（仅支持 active/completed/deprecated）",
         }
+    by = (by or "manual").strip() or "manual"
     specs_dir = _nlspec_dir_path(project_dir)
     full = os.path.join(specs_dir, name)
     if not os.path.isfile(full):
@@ -617,7 +697,7 @@ def set_nlspec_status(
         with open(full, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
         with open(full, "w", encoding="utf-8") as f:
-            f.write(_nlspec_set_status(content, status))
+            f.write(_nlspec_set_status(content, status, by=by))
     except Exception as e:  # noqa: BLE001
         return {"success": False, "error": f"写入 NLSpec 状态失败: {e}"}
     return {"success": True, "data": {"name": name, "status": status}}

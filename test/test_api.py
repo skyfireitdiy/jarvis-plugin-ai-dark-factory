@@ -580,11 +580,12 @@ def test_set_nlspec_status_completed(tmp_path):
     # list 返回 status
     auth = next(s for s in api.list_nlspecs(proj)["data"]["specs"] if s["name"] == "auth.md")
     assert auth["status"] == "completed"
-    # 文件含 frontmatter
+    # 文件含 frontmatter（status + history）
     content = os.path.join(proj, ".jarvis", ".df", "specs", "auth.md")
     with open(content, encoding="utf-8") as f:
         text = f.read()
-    assert text.startswith("---\nstatus: completed\n---\n")
+    assert text.startswith("---\nstatus: completed\n")
+    assert "history:" in text
     # 原内容保留
     assert "## Goal" in text
 
@@ -600,6 +601,53 @@ def test_set_nlspec_status_reactivate_keeps_frontmatter(tmp_path):
     # frontmatter 只有一条 status 行
     text = open(os.path.join(proj, ".jarvis", ".df", "specs", "auth.md"), encoding="utf-8").read()
     assert text.count("status:") == 1
+
+
+def test_set_nlspec_status_records_history(tmp_path):
+    """set_nlspec_status 每次成功变更在 frontmatter 追加 history（含 at/from/to/by）。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.set_nlspec_status(proj, "auth.md", "completed", by="agent")
+    assert r["success"] is True
+    text = open(os.path.join(proj, ".jarvis", ".df", "specs", "auth.md"), encoding="utf-8").read()
+    assert "history:" in text
+    assert "- at:" in text
+    assert "from: active" in text
+    assert "to: completed" in text
+    assert "by: agent" in text
+    # get_nlspec 返回 history
+    g = api.get_nlspec(proj, "auth.md")
+    assert g["data"]["status"] == "completed"
+    assert isinstance(g["data"].get("history"), list)
+    assert g["data"]["history"][0]["from"] == "active"
+    assert g["data"]["history"][0]["to"] == "completed"
+    assert g["data"]["history"][0]["by"] == "agent"
+    assert g["data"]["history"][0]["at"]
+
+
+def test_set_nlspec_status_history_appends_not_overwrites(tmp_path):
+    """history 只追加不覆盖：多次变更保留全部记录，旧记录不被覆盖。"""
+    proj = _make_nlspec_project(tmp_path)
+    api.set_nlspec_status(proj, "auth.md", "completed", by="agent")
+    api.set_nlspec_status(proj, "auth.md", "deprecated", by="manual")
+    api.set_nlspec_status(proj, "auth.md", "active", by="agent")
+    g = api.get_nlspec(proj, "auth.md")
+    hist = g["data"]["history"]
+    assert len(hist) == 3
+    assert [h["to"] for h in hist] == ["completed", "deprecated", "active"]
+    assert [h["by"] for h in hist] == ["agent", "manual", "agent"]
+    # 每条记录 from 是上一条的 to（链式）
+    assert hist[0]["from"] == "active"
+    assert hist[1]["from"] == "completed"
+    assert hist[2]["from"] == "deprecated"
+
+
+def test_set_nlspec_status_by_default_manual(tmp_path):
+    """by 缺省为 manual（前端人工标记语义）。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.set_nlspec_status(proj, "auth.md", "completed")
+    assert r["success"] is True
+    g = api.get_nlspec(proj, "auth.md")
+    assert g["data"]["history"][0]["by"] == "manual"
 
 
 def test_set_nlspec_status_invalid(tmp_path):
