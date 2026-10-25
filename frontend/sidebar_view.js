@@ -1001,8 +1001,9 @@ export default {
         this.error = (e && e.message) || "在编辑器中打开失败";
       }
     },
-    // 基于该 NLSpec 开启黑灯工厂流程（<dark-factory/run>，读固定 spec）
-    async openNlspecPipeline(name) {
+    // 基于该 NLSpec 开启黑灯工厂流程（<dark-factory/run>，读固定 spec）。
+    // mode: "full"=完整多 agent 流水线（pipeline_runner 编排）；"quick"=简化版（单 agent 直接干 + 回流）
+    async openNlspecPipeline(name, mode) {
       if (!this.projectDir || !name) return;
       const spec = this.nlspecs.find((s) => s.name === name);
       const missing = spec ? this.missingElements(spec) : [];
@@ -1020,32 +1021,50 @@ export default {
       }
       this.nlspecBusy = true;
       const specPath = ".jarvis/.df/specs/" + name;
-      const task = [
-        `请基于 NLSpec 对项目 ${this.projectDir} 执行黑灯工厂流水线（<dark-factory/run>）。`,
-        "",
-        `先 read_code 读取固定 NLSpec 文件 ${specPath}，四要素不齐或模糊时先向用户澄清补齐。`,
-        "再与用户讨论动态生成编排文件（参考 orchestration/dark_factory_pipeline.yaml 模板），",
-        "把 NLSpec 内容写入编排文件顶层 spec 字段，落盘到 .jarvis/.df/pipeline.yaml，用户确认后",
-        "用 pipeline_runner 工具驱动流水线（approve=false，门禁停住交人工审批）。",
-      ].join("\n");
+      const isQuick = mode === "quick";
+      const task = isQuick
+        ? [
+            `请基于 NLSpec 对项目 ${this.projectDir} 执行简化版黑灯工厂开发（<dark-factory/quick>）。`,
+            "",
+            `先 read_code 读取固定 NLSpec 文件 ${specPath}，四要素不齐或模糊时先向用户澄清补齐。`,
+            "再按以下步骤直接开发（不启用多 agent 流水线编排）：",
+            "一、用 TDD 铁律实现：先写测试（红）→ 写实现（绿）→ 重构，遵守 tdd_iron_rule 规则。",
+            "二、直接在当前代码库中修改代码（generator 职责），不新建独立目录。",
+            "三、跑项目既有测试 + 新增测试，确认全部通过；不通过则修复到通过。",
+            "四、遵守 spec 的 Constraints，不越界实现 Non-goals。",
+            "五、开发完成后，执行知识回流：用 reversa 工具（action=sync_diff）分析基线到当前 HEAD 的代码变更，",
+            "  增量更新 _reversa_sdd/ 规格产物（新增/修改内容标 🟡INFERRED，确认无误升级 🟢CONFIRMED，缺口标 🔴GAP），",
+            "  同步完成后用 reversa 工具（action=sync_baseline）更新基线，再用（action=export_rules）重新导出 rule 知识库。",
+            "六、向用户汇报：改动清单（git diff 摘要）、测试结果、回流结果，交人工确认。",
+            "",
+            "行事准则：只读 git（rev-parse/diff），不修改代码仓库；幂等，重复同步不产生副作用。",
+          ].join("\n")
+        : [
+            `请基于 NLSpec 对项目 ${this.projectDir} 执行黑灯工厂流水线（<dark-factory/run>）。`,
+            "",
+            `先 read_code 读取固定 NLSpec 文件 ${specPath}，四要素不齐或模糊时先向用户澄清补齐。`,
+            "再与用户讨论动态生成编排文件（参考 orchestration/dark_factory_pipeline.yaml 模板），",
+            "把 NLSpec 内容写入编排文件顶层 spec 字段，落盘到 .jarvis/.df/pipeline.yaml，用户确认后",
+            "用 pipeline_runner 工具驱动流水线（approve=false，门禁停住交人工审批）。",
+          ].join("\n");
       const prefill = {
         workingDir: this.projectDir,
         task: task,
-        name: `${baseName(this.projectDir)} - 黑灯工厂（${name}）`,
+        name: `${baseName(this.projectDir)} - ${isQuick ? "黑灯工厂·简化" : "黑灯工厂"}（${name}）`,
         nodeId: this.nodeId,
       };
       try {
         if (typeof openModal === "function") {
           const res = await openModal(prefill);
           if (res && res.confirmed) {
-            this.message = `已创建 Agent 基于 ${name} 开启黑灯工厂流程`;
+            this.message = `已创建 Agent 基于 ${name} 开启${isQuick ? "简化版" : ""}黑灯工厂流程`;
           } else {
             this.message = "已取消";
           }
         } else {
           const res = await create(prefill);
           if (res && res.success) {
-            this.message = `已创建 Agent 基于 ${name} 开启黑灯工厂流程`;
+            this.message = `已创建 Agent 基于 ${name} 开启${isQuick ? "简化版" : ""}黑灯工厂流程`;
           } else {
             this.message = "失败: " + ((res && res.error) || "创建失败");
           }
@@ -2001,9 +2020,12 @@ export default {
             style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">激活</button>
           <button @click="deleteNlspec(s.name)" :disabled="nlspecBusy" title="删除该 NLSpec（不可恢复）"
             style="padding:2px 6px;background:#6e2f2f;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">删除</button>
-          <button @click="openNlspecPipeline(s.name)" :disabled="nlspecBusy || missingElements(s).length > 0 || s.status !== 'active'"
-            :title="s.status === 'completed' ? '该 NLSpec 已完成，无需再开启流水线' : (s.status === 'deprecated' ? '该 NLSpec 已废弃，不再参与流水线' : (missingElements(s).length ? '四要素不完整，请先点「编辑」澄清补齐：' + missingElements(s).join('、') : '基于该 NLSpec 开启黑灯工厂流程'))"
-            :style="{padding:'2px 6px',background: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? '#2d2d2d' : '#1f6feb', color: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? 'not-allowed' : 'pointer', fontSize:'10px'}">开启</button>
+          <button @click="openNlspecPipeline(s.name, 'full')" :disabled="nlspecBusy || missingElements(s).length > 0 || s.status !== 'active'"
+            :title="s.status === 'completed' ? '该 NLSpec 已完成，无需再开启流水线' : (s.status === 'deprecated' ? '该 NLSpec 已废弃，不再参与流水线' : (missingElements(s).length ? '四要素不完整，请先点「编辑」澄清补齐：' + missingElements(s).join('、') : '完整版：多 agent 流水线（规划/隐藏场景/验证/回归/门禁），适合中等以上需求'))"
+            :style="{padding:'2px 6px',background: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? '#2d2d2d' : '#1f6feb', color: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? 'not-allowed' : 'pointer', fontSize:'10px'}">完整</button>
+          <button @click="openNlspecPipeline(s.name, 'quick')" :disabled="nlspecBusy || missingElements(s).length > 0 || s.status !== 'active'"
+            :title="s.status === 'completed' ? '该 NLSpec 已完成，无需再开启流水线' : (s.status === 'deprecated' ? '该 NLSpec 已废弃，不再参与流水线' : (missingElements(s).length ? '四要素不完整，请先点「编辑」澄清补齐：' + missingElements(s).join('、') : '简化版：单 agent 直接 TDD 写码 + 跑测试 + 知识回流，适合小需求'))"
+            :style="{padding:'2px 6px',background: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? '#2d2d2d' : '#238636', color: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? 'not-allowed' : 'pointer', fontSize:'10px'}">简化</button>
         </div>
       </div>
     </div>

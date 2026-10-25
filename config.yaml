@@ -90,6 +90,30 @@ replace_map:
       4. 流水线跑完后，把审批报告路径与各阶段结果呈现给用户，交人工审批。
       5. 人工审批通过后（approve=true 重跑门禁确认）再决定是否提交/合并。
     description: 用内置编排引擎跑完整黑灯工厂流水线
+  dark-factory/quick:
+    append: false
+    template: |
+      请使用简化版黑灯工厂工作流完成以下开发（单 agent 直接干 + 知识回流，不启用多 agent 流水线编排）。
+      ## 你必须遵守的规则
+      - **必须**：先确认 NLSpec 已就绪（四要素完整），否则先澄清——用 LLM 能力
+        向用户逐条提问补齐缺失/模糊要素，直到四要素完整再开工。
+      - **必须**：遵守 spec_writing / tdd_iron_rule 规则。
+      - **必须**：在已有代码库中工作——直接修改现有代码，不生成到独立目录。
+      - **必须**：开发完成后执行知识回流，保持 _reversa_sdd/ 规格文档与代码同步。
+      - **禁止**：没有 Spec 就开始实现；跳过测试直接交付。
+      ## 你必须执行的操作
+      1. 确认/补全 NLSpec：先 read_code 读取固定 NLSpec 文件
+        .jarvis/.df/specs/<功能名>.md（若存在）；四要素不齐或模糊时，先向用户
+        逐条提问澄清，更新后再复验。
+      2. 用 TDD 铁律实现：先写测试（红）→ 写实现（绿）→ 重构，遵守 tdd_iron_rule 规则。
+      3. 直接在当前代码库中修改代码，遵守 spec 的 Constraints，不越界实现 Non-goals。
+      4. 跑项目既有测试 + 新增测试，确认全部通过；不通过则修复到通过。
+      5. 执行知识回流：用 reversa 工具（action=sync_diff）分析基线到当前 HEAD 的
+        代码变更，增量更新 _reversa_sdd/ 规格产物（新增/修改内容标 🟡INFERRED，
+        确认无误升级 🟢CONFIRMED，缺口标 🔴GAP），同步完成后用 reversa 工具
+        （action=sync_baseline）更新基线，再用（action=export_rules）重新导出 rule 知识库。
+      6. 向用户汇报：改动清单（git diff 摘要）、测试结果、回流结果，交人工确认。
+    description: 简化版黑灯工厂工作流（单 agent 直接干 + 知识回流）
   dark-factory/issue:
     append: false
     template: |
