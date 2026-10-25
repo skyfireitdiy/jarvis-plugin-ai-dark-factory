@@ -213,6 +213,8 @@ export default {
       helpVisible: false,
       // 使用说明（闭环流程图）折叠状态
       guideVisible: true,
+      // 右键菜单（refresh-context-menu）：visible=是否显示，x/y=弹出位置（鼠标坐标）
+      contextMenu: { visible: false, x: 0, y: 0 },
     };
   },
   computed: {
@@ -1093,6 +1095,31 @@ export default {
         this.nlspecBusy = false;
       }
     },
+    // ---- 右键菜单（refresh-context-menu）----
+    // 空白处右键：阻止浏览器默认菜单，基于鼠标坐标弹出自定义菜单（考虑视口边界避免溢出）。
+    openContextMenu(e) {
+      if (e && typeof e.preventDefault === "function") e.preventDefault();
+      const vw = (typeof window !== "undefined" && window.innerWidth) || 0;
+      const vh = (typeof window !== "undefined" && window.innerHeight) || 0;
+      // 菜单估算尺寸（与模板中菜单样式保持一致）
+      const MENU_W = 120;
+      const MENU_H = 80;
+      const x = Math.min((e && e.clientX) || 0, Math.max(0, vw - MENU_W));
+      const y = Math.min((e && e.clientY) || 0, Math.max(0, vh - MENU_H));
+      this.contextMenu.x = x;
+      this.contextMenu.y = y;
+      this.contextMenu.visible = true;
+    },
+    // 关闭右键菜单（点击外部 / Esc / 再次右键时调用）
+    closeContextMenu() {
+      this.contextMenu.visible = false;
+    },
+    // 点击菜单「刷新」项：复用全量刷新 refresh()，完成后关闭菜单；刷新中禁用。
+    refreshFromMenu() {
+      if (this.loading) return;
+      this.refresh();
+      this.closeContextMenu();
+    },
     // ---- 状态 ----
     async refresh() {
       this.loading = true;
@@ -1658,7 +1685,8 @@ export default {
     },
   },
   template: `
-  <div style="display:flex;flex-direction:column;height:100%;font-size:12px;color:#ddd;overflow-y:auto;overflow-x:hidden;">
+  <div style="display:flex;flex-direction:column;height:100%;font-size:12px;color:#ddd;overflow-y:auto;overflow-x:hidden;"
+    @contextmenu="openContextMenu" @click="closeContextMenu" @keydown.esc="closeContextMenu">
     <!-- 头部 -->
     <div style="padding:8px 10px;border-bottom:1px solid #333;display:flex;align-items:center;gap:6px;flex-shrink:0;">
       <span style="font-weight:bold;font-size:13px;">🏭 黑灯工厂</span>
@@ -2118,6 +2146,16 @@ export default {
           <button @click="helpVisible = false"
             style="padding:5px 14px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;">关闭</button>
         </div>
+      </div>
+    </div>
+    <!-- 右键菜单（refresh-context-menu）：空白处右键弹出「刷新」项，复用全量刷新 refresh() -->
+    <div v-if="contextMenu.visible"
+      :style="{ position: 'fixed', left: contextMenu.x + 'px', top: contextMenu.y + 'px', zIndex: 9999,
+        background: '#2d2d2d', border: '1px solid #444', borderRadius: '4px', color: '#ddd',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.5)', minWidth: '120px', padding: '4px 0', fontSize: '12px' }">
+      <div @click="refreshFromMenu" :class="{ disabled: loading }"
+        :style="{ padding: '6px 12px', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1 }">
+        刷新
       </div>
     </div>
   </div>
