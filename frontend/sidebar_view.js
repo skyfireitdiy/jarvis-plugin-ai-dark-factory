@@ -422,6 +422,12 @@ export default {
     },
   },
   methods: {
+    // 取路径最后一段作为显示名（模板可直接调用；与模块顶层同名函数行为一致）
+    baseName(p) {
+      const s = String(p || "").replace(/[\\/]+$/, "");
+      const i = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+      return i >= 0 ? s.slice(i + 1) : s;
+    },
     // ---- 节点管理 ----
     // 加载节点列表（__jarvisGetNodes，master 恒在列），并恢复上次选中的节点
     initNodes() {
