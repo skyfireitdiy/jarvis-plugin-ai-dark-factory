@@ -204,6 +204,7 @@ export default {
       nlspecBusy: false,
       // 知识回流（sync）
       syncStatus: null, // {has_baseline, base_commit, head_commit, stale, changed_artifacts, ...}
+      syncDiff: null, // 最近一次 analyze_sync_diff 的结果 {base_commit, head_commit, changed_files, affected_artifacts, diff_stat}
       syncBusy: false,
       // 前置条件检查结果（项目目录是否存在/是否 git 仓库），null 表示未检查
       projectCheck: null, // {path, exists, is_git, error?}
@@ -1491,6 +1492,7 @@ export default {
           this.nodeId,
         );
         const d = payload.data || {};
+        this.syncDiff = d;
         if (d.up_to_date) {
           this.message = "文档与代码已同步（无代码变更）";
         } else {
@@ -1533,10 +1535,34 @@ export default {
       this.syncBusy = true;
       this.error = "";
       this.message = "";
+      // 基线 + 差异上下文：把已固化的基线 commit 与（若有）最近一次差异分析结果直接注入任务，
+      // 让 Agent 一进来就知道基线/HEAD/变更文件/受影响产物，不用从零重新分析。
+      const baseCommit = (this.syncStatus && this.syncStatus.base_commit) || "";
+      const headCommit = (this.syncStatus && this.syncStatus.head_commit) || "";
+      const diff = this.syncDiff || null;
       const task = [
         `请对项目 ${this.projectDir} 执行知识回流（文档与代码同步）。`,
         "",
-        "一、用 reversa 工具（action=sync_diff, project_dir=<工作目录>）分析基线 commit 到当前 HEAD 的代码变更，",
+        "【基线信息】",
+        `- 基线 commit（规格产物固化点）：${baseCommit || "未知"}`,
+        `- 当前 HEAD commit：${headCommit || "未知"}`,
+        `- 基线 commit 信息：${(this.syncStatus && this.syncStatus.base_commit_msg) || "（无）"}`,
+        "",
+        diff
+          ? [
+              "【差异分析结果】（最近一次「分析差异」的结果，可直接作为输入）",
+              `- 变更代码文件（${(diff.changed_files || []).length} 个）：`,
+              ...(diff.changed_files || []).map(
+                (f) => `  ${f.status || "?"}  ${f.path}`,
+              ),
+              `- 受影响产物（${(diff.affected_artifacts || []).length} 个）：${(diff.affected_artifacts || []).join(", ") || "（无）"}`,
+              diff.diff_stat
+                ? ["- diff --stat 摘要：", ...diff.diff_stat.split("\n").map((l) => `  ${l}`)].join("\n")
+                : "- diff --stat 摘要：（空）",
+            ].join("\n")
+          : "（尚未执行差异分析。请先用 reversa 工具 action=sync_diff 分析基线到当前 HEAD 的代码变更，得到受影响产物清单。）",
+        "",
+        "一、用 reversa 工具（action=sync_diff, project_dir=<工作目录>）复核基线 commit 到当前 HEAD 的代码变更（若上面已有差异分析结果，可在此基础上复核确认），",
         "  得到受影响产物清单。注意：该清单是启发式候选（可能误报/漏报），不能机械全量更新。",
         "二、对每个候选产物：用 read_artifact / read_code 读取产物内容与对应代码变更（git diff / 源码），",
         "  逐个确认是否真的需要更新；不需要的跳过，需要的新增/修正对应章节。",
