@@ -434,6 +434,72 @@ def _nlspec_title(content: str) -> str:
     return ""
 
 
+# NLSpec 合法状态：active=进行中（默认）/ completed=已完成 / deprecated=已废弃
+_NLSPEC_STATUSES = ("active", "completed", "deprecated")
+
+
+def _nlspec_frontmatter(content: str) -> tuple:
+    """解析内容开头 frontmatter 块。返回 (block, rest, lines)。
+
+    block 为 frontmatter 原始文本（含首尾 --- 行，无 frontmatter 为 ""）；
+    rest 为 frontmatter 之后的内容（无 frontmatter 时为原内容）；
+    lines 为 frontmatter 内部各行（不含首尾 --- 行）。
+    """
+    if not content.startswith("---\n"):
+        return "", content, []
+    end = content.find("\n---", 4)
+    if end == -1:
+        return "", content, []
+    block = content[: end + 4]
+    inner = content[4:end].split("\n")
+    rest = content[end + 4 :]
+    return block, rest, inner
+
+
+def _nlspec_status(content: str) -> str:
+    """从 frontmatter 读取 status；无/非法时返回 active。"""
+    _, _, lines = _nlspec_frontmatter(content)
+    for line in lines:
+        line = line.strip()
+        if line.startswith("status:"):
+            val = line.split(":", 1)[1].strip().strip('"').strip("'")
+            if val in _NLSPEC_STATUSES:
+                return val
+            return "active"
+    return "active"
+
+
+def _nlspec_set_status(content: str, status: str) -> str:
+    """把 status 写入/更新 frontmatter，返回新内容。"""
+    block, rest, lines = _nlspec_frontmatter(content)
+    if not block:
+        return "---\nstatus: %s\n---\n\n%s" % (status, content)
+    new_lines = []
+    replaced = False
+    for line in lines:
+        if line.strip().startswith("status:"):
+            new_lines.append("status: %s" % status)
+            replaced = True
+        else:
+            new_lines.append(line)
+    if not replaced:
+        new_lines.append("status: %s" % status)
+    return "---\n" + "\n".join(new_lines) + "\n---" + rest
+
+
+def _nlspec_name_valid(name: str) -> bool:
+    """校验 NLSpec 文件名合法性（纯 .md 文件名，防路径穿越）。"""
+    return (
+        bool(name)
+        and os.path.basename(name) == name
+        and not name.startswith("/")
+        and not name.startswith("\\")
+        and ".." not in name.split("/")
+        and ".." not in name.split("\\")
+        and name.endswith(".md")
+    )
+
+
 def list_nlspecs(project_dir: Optional[str] = None) -> Dict[str, Any]:
     """列出项目固定 NLSpec 目录（.jarvis/.df/specs/）下的 spec 文件。
 
@@ -466,6 +532,7 @@ def list_nlspecs(project_dir: Optional[str] = None) -> Dict[str, Any]:
                 {
                     "name": name,
                     "title": _nlspec_title(content),
+                    "status": _nlspec_status(content),
                     "updated_at": stat.st_mtime,
                     "size": stat.st_size,
                 }
@@ -502,7 +569,7 @@ def get_nlspec(
     specs_dir = _nlspec_dir_path(project_dir)
     full = os.path.join(specs_dir, name)
     if not os.path.isfile(full):
-        return {"success": True, "data": {"name": name, "title": "", "content": "", "exists": False}}
+        return {"success": True, "data": {"name": name, "title": "", "content": "", "status": "active", "exists": False}}
     try:
         with open(full, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
@@ -510,8 +577,75 @@ def get_nlspec(
         return {"success": False, "error": f"读取 NLSpec 失败: {e}"}
     return {
         "success": True,
-        "data": {"name": name, "title": _nlspec_title(content), "content": content, "exists": True},
+        "data": {
+            "name": name,
+            "title": _nlspec_title(content),
+            "content": content,
+            "status": _nlspec_status(content),
+            "exists": True,
+        },
     }
+
+
+def set_nlspec_status(
+    project_dir: Optional[str] = None,
+    name: Optional[str] = None,
+    status: Optional[str] = None,
+) -> Dict[str, Any]:
+    """设置 NLSpec 状态（active/completed/deprecated）。
+
+    状态写入 spec 文件 frontmatter（---\nstatus: xxx\n---），随文件走、git 可追踪。
+    返回 {"success": True, "data": {name, status}}。
+    """
+    project_dir, err = _resolve_project(project_dir)
+    if err:
+        return {"success": False, "error": err}
+    name = (name or "").strip()
+    if not _nlspec_name_valid(name):
+        return {"success": False, "error": f"非法 NLSpec 文件名: {name}"}
+    status = (status or "").strip()
+    if status not in _NLSPEC_STATUSES:
+        return {
+            "success": False,
+            "error": f"非法 NLSpec 状态: {status}（仅支持 active/completed/deprecated）",
+        }
+    specs_dir = _nlspec_dir_path(project_dir)
+    full = os.path.join(specs_dir, name)
+    if not os.path.isfile(full):
+        return {"success": False, "error": f"NLSpec 不存在: {name}"}
+    try:
+        with open(full, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        with open(full, "w", encoding="utf-8") as f:
+            f.write(_nlspec_set_status(content, status))
+    except Exception as e:  # noqa: BLE001
+        return {"success": False, "error": f"写入 NLSpec 状态失败: {e}"}
+    return {"success": True, "data": {"name": name, "status": status}}
+
+
+def delete_nlspec(
+    project_dir: Optional[str] = None, name: Optional[str] = None
+) -> Dict[str, Any]:
+    """删除 NLSpec 文件。
+
+    文件不存在时幂等返回 {"success": True, "data": {deleted: False}}。
+    返回 {"success": True, "data": {name, deleted}}。
+    """
+    project_dir, err = _resolve_project(project_dir)
+    if err:
+        return {"success": False, "error": err}
+    name = (name or "").strip()
+    if not _nlspec_name_valid(name):
+        return {"success": False, "error": f"非法 NLSpec 文件名: {name}"}
+    specs_dir = _nlspec_dir_path(project_dir)
+    full = os.path.join(specs_dir, name)
+    if not os.path.isfile(full):
+        return {"success": True, "data": {"name": name, "deleted": False}}
+    try:
+        os.remove(full)
+    except Exception as e:  # noqa: BLE001
+        return {"success": False, "error": f"删除 NLSpec 失败: {e}"}
+    return {"success": True, "data": {"name": name, "deleted": True}}
 
 
 # ---------------------------------------------------------------------------
@@ -1118,4 +1252,6 @@ PUBLIC_FUNCTIONS: List[str] = [
     "analyze_sync_diff",
     "list_nlspecs",
     "get_nlspec",
+    "set_nlspec_status",
+    "delete_nlspec",
 ]

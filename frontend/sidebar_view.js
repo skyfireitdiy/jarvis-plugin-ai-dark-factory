@@ -188,7 +188,7 @@ export default {
       refType: "doc",
       refBusy: false,
       // NLSpec 管理（issue #14）：固定目录 .jarvis/.df/specs/
-      nlspecs: [], // [{name, title, updated_at, size, elements: {goal,constraints,interfaces,nongoals}}]
+      nlspecs: [], // [{name, title, status, updated_at, size, elements: {goal,constraints,interfaces,nongoals}}]
       nlspecLoading: false,
       nlspecBusy: false,
       // 知识回流（sync）
@@ -897,6 +897,67 @@ export default {
     editNlspec(name) {
       if (!name) return;
       this.runClarifyAgent(name, true);
+    },
+    // 设置 NLSpec 状态（active/completed/deprecated），成功后重扫列表
+    async setNlspecStatus(name, status) {
+      if (!this.projectDir || !name) return;
+      this.error = "";
+      this.message = "";
+      try {
+        const payload = await callFunction(
+          "set_nlspec_status",
+          { project_dir: this.projectDir, name, status },
+          this.nodeId,
+        );
+        if (payload && payload.success) {
+          this.message = `已标记 ${name} 为 ${status === "completed" ? "已完成" : status === "deprecated" ? "已废弃" : "进行中"}`;
+          await this.scanNlspecs();
+        } else {
+          this.error = (payload && payload.error) || "设置 NLSpec 状态失败";
+        }
+      } catch (e) {
+        this.error = (e && e.message) || "设置 NLSpec 状态失败";
+      }
+    },
+    // 标记 NLSpec 为已完成
+    markNlspecCompleted(name) {
+      if (!name) return;
+      if (!window.confirm(`标记 NLSpec「${name}」为已完成？`)) return;
+      this.setNlspecStatus(name, "completed");
+    },
+    // 标记 NLSpec 为已废弃（不再参与流水线）
+    markNlspecDeprecated(name) {
+      if (!name) return;
+      if (!window.confirm(`废弃 NLSpec「${name}」？已废弃的 spec 不再参与流水线。`)) return;
+      this.setNlspecStatus(name, "deprecated");
+    },
+    // 重新激活 NLSpec（恢复为进行中）
+    reactivateNlspec(name) {
+      if (!name) return;
+      if (!window.confirm(`重新激活 NLSpec「${name}」？`)) return;
+      this.setNlspecStatus(name, "active");
+    },
+    // 删除 NLSpec 文件（不可恢复）
+    async deleteNlspec(name) {
+      if (!this.projectDir || !name) return;
+      if (!window.confirm(`删除 NLSpec「${name}」？此操作不可恢复。`)) return;
+      this.error = "";
+      this.message = "";
+      try {
+        const payload = await callFunction(
+          "delete_nlspec",
+          { project_dir: this.projectDir, name },
+          this.nodeId,
+        );
+        if (payload && payload.success) {
+          this.message = `已删除 NLSpec：${name}`;
+          await this.scanNlspecs();
+        } else {
+          this.error = (payload && payload.error) || "删除 NLSpec 失败";
+        }
+      } catch (e) {
+        this.error = (e && e.message) || "删除 NLSpec 失败";
+      }
     },
     // 在宿主编译器中打开 NLSpec 文件（.jarvis/.df/specs/<name>）
     async openNlspecInEditor(name) {
@@ -1887,9 +1948,19 @@ export default {
             style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">打开</button>
           <button @click="editNlspec(s.name)" :disabled="nlspecBusy" title="编辑（创建 Agent 跑澄清补齐四要素）"
             style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">编辑</button>
-          <button @click="openNlspecPipeline(s.name)" :disabled="nlspecBusy || missingElements(s).length > 0"
-            :title="missingElements(s).length ? '四要素不完整，请先点「编辑」澄清补齐：' + missingElements(s).join('、') : '基于该 NLSpec 开启黑灯工厂流程'"
-            :style="{padding:'2px 6px',background: (nlspecBusy || missingElements(s).length) ? '#2d2d2d' : '#1f6feb', color: (nlspecBusy || missingElements(s).length) ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || missingElements(s).length) ? 'not-allowed' : 'pointer', fontSize:'10px'}">开启</button>
+          <span v-if="s.status === 'completed'" style="color:#3fb950;font-size:10px;" title="该 NLSpec 已完成">✔ 完成</span>
+          <span v-else-if="s.status === 'deprecated'" style="color:#8b949e;font-size:10px;" title="该 NLSpec 已废弃">✖ 废弃</span>
+          <button v-if="s.status === 'active'" @click="markNlspecCompleted(s.name)" :disabled="nlspecBusy" title="标记该 NLSpec 为已完成"
+            style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">完成</button>
+          <button v-if="s.status === 'active'" @click="markNlspecDeprecated(s.name)" :disabled="nlspecBusy" title="废弃该 NLSpec（不再参与流水线）"
+            style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">废弃</button>
+          <button v-else @click="reactivateNlspec(s.name)" :disabled="nlspecBusy" title="重新激活该 NLSpec"
+            style="padding:2px 6px;background:#333;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">激活</button>
+          <button @click="deleteNlspec(s.name)" :disabled="nlspecBusy" title="删除该 NLSpec（不可恢复）"
+            style="padding:2px 6px;background:#6e2f2f;color:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:10px;">删除</button>
+          <button @click="openNlspecPipeline(s.name)" :disabled="nlspecBusy || missingElements(s).length > 0 || s.status !== 'active'"
+            :title="s.status === 'completed' ? '该 NLSpec 已完成，无需再开启流水线' : (s.status === 'deprecated' ? '该 NLSpec 已废弃，不再参与流水线' : (missingElements(s).length ? '四要素不完整，请先点「编辑」澄清补齐：' + missingElements(s).join('、') : '基于该 NLSpec 开启黑灯工厂流程'))"
+            :style="{padding:'2px 6px',background: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? '#2d2d2d' : '#1f6feb', color: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || missingElements(s).length || s.status !== 'active') ? 'not-allowed' : 'pointer', fontSize:'10px'}">开启</button>
         </div>
       </div>
     </div>

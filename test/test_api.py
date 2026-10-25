@@ -57,6 +57,8 @@ def test_public_functions_whitelist():
         "analyze_sync_diff",
         "list_nlspecs",
         "get_nlspec",
+        "set_nlspec_status",
+        "delete_nlspec",
     }
     assert set(api.PUBLIC_FUNCTIONS) == expected
     for fn in api.PUBLIC_FUNCTIONS:
@@ -564,6 +566,93 @@ def test_get_nlspec_requires_name(tmp_path):
     r = api.get_nlspec(proj, None)
     assert r["success"] is False
     assert "name" in r["error"]
+
+
+def test_set_nlspec_status_completed(tmp_path):
+    """set_nlspec_status 标记 completed 后 list/get 返回 status，文件写入 frontmatter。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.set_nlspec_status(proj, "auth.md", "completed")
+    assert r["success"] is True
+    assert r["data"] == {"name": "auth.md", "status": "completed"}
+    # get 返回 status
+    g = api.get_nlspec(proj, "auth.md")
+    assert g["data"]["status"] == "completed"
+    # list 返回 status
+    auth = next(s for s in api.list_nlspecs(proj)["data"]["specs"] if s["name"] == "auth.md")
+    assert auth["status"] == "completed"
+    # 文件含 frontmatter
+    content = os.path.join(proj, ".jarvis", ".df", "specs", "auth.md")
+    with open(content, encoding="utf-8") as f:
+        text = f.read()
+    assert text.startswith("---\nstatus: completed\n---\n")
+    # 原内容保留
+    assert "## Goal" in text
+
+
+def test_set_nlspec_status_reactivate_keeps_frontmatter(tmp_path):
+    """把 completed 改回 active：frontmatter 内 status 被替换，其余字段保留。"""
+    proj = _make_nlspec_project(tmp_path)
+    api.set_nlspec_status(proj, "auth.md", "completed")
+    api.set_nlspec_status(proj, "auth.md", "deprecated")
+    r = api.set_nlspec_status(proj, "auth.md", "active")
+    assert r["success"] is True
+    assert api.get_nlspec(proj, "auth.md")["data"]["status"] == "active"
+    # frontmatter 只有一条 status 行
+    text = open(os.path.join(proj, ".jarvis", ".df", "specs", "auth.md"), encoding="utf-8").read()
+    assert text.count("status:") == 1
+
+
+def test_set_nlspec_status_invalid(tmp_path):
+    """set_nlspec_status 非法状态报错。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.set_nlspec_status(proj, "auth.md", "bogus")
+    assert r["success"] is False
+    assert "状态" in r["error"]
+
+
+def test_set_nlspec_status_missing_file(tmp_path):
+    """set_nlspec_status 文件不存在报错。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.set_nlspec_status(proj, "missing.md", "completed")
+    assert r["success"] is False
+    assert "不存在" in r["error"]
+
+
+def test_set_nlspec_status_path_traversal_blocked(tmp_path):
+    """set_nlspec_status 拦截路径穿越。"""
+    proj = _make_nlspec_project(tmp_path)
+    for bad in ["../../etc/passwd", "/etc/passwd", "a/b.md", "..\\evil.md"]:
+        r = api.set_nlspec_status(proj, bad, "completed")
+        assert r["success"] is False, f"应拦截: {bad}"
+        assert "非法" in r["error"]
+
+
+def test_delete_nlspec(tmp_path):
+    """delete_nlspec 删除文件后 list 不含、get exists=False。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.delete_nlspec(proj, "report.md")
+    assert r["success"] is True
+    assert r["data"] == {"name": "report.md", "deleted": True}
+    names = [s["name"] for s in api.list_nlspecs(proj)["data"]["specs"]]
+    assert names == ["auth.md"]
+    assert api.get_nlspec(proj, "report.md")["data"]["exists"] is False
+
+
+def test_delete_nlspec_missing_idempotent(tmp_path):
+    """delete_nlspec 删不存在的文件幂等返回 deleted=False。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.delete_nlspec(proj, "missing.md")
+    assert r["success"] is True
+    assert r["data"] == {"name": "missing.md", "deleted": False}
+
+
+def test_delete_nlspec_path_traversal_blocked(tmp_path):
+    """delete_nlspec 拦截路径穿越。"""
+    proj = _make_nlspec_project(tmp_path)
+    for bad in ["../../etc/passwd", "/etc/passwd", "a/b.md", "..\\evil.md"]:
+        r = api.delete_nlspec(proj, bad)
+        assert r["success"] is False, f"应拦截: {bad}"
+        assert "非法" in r["error"]
 
 
 def test_check_project_flags(tmp_path):
