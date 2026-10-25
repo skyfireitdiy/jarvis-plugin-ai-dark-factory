@@ -1920,6 +1920,11 @@ export default {
           :style="{padding:'2px 8px',background:'#2d2d2d',color: canAnalyzeSync ? '#ddd' : '#777',border:'1px solid #444',borderRadius:'4px',cursor: canAnalyzeSync ? 'pointer' : 'not-allowed',fontSize:'11px'}">
           {{ syncBusy ? '处理中…' : '分析差异' }}
         </button>
+        <button @click="doSyncBackfill" :disabled="!canSyncBackfill"
+          :title="syncBackfillBlockReason || '把基线到当前 HEAD 的代码变更增量更新到规格产物'"
+          :style="{padding:'2px 8px',background:'#2d2d2d',color: canSyncBackfill ? '#ddd' : '#777',border:'1px solid #444',borderRadius:'4px',cursor: canSyncBackfill ? 'pointer' : 'not-allowed',fontSize:'11px'}">
+          {{ syncBusy ? '处理中…' : '回流' }}
+        </button>
       </div>
       <div v-if="syncStatus && (syncStatus.changed_artifacts.length || syncStatus.added_artifacts.length || syncStatus.removed_artifacts.length)"
         style="font-size:11px;color:#d29922;margin-bottom:2px;">
