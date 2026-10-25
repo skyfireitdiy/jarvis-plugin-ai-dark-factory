@@ -145,6 +145,17 @@ function baseName(p) {
   return i >= 0 ? s.slice(i + 1) : s;
 }
 
+// 确认类弹窗：优先用宿主自定义确认对话框（window.__jarvisConfirm，返回 Promise<boolean>），
+// 宿主未提供该通道时回退原生 window.confirm（兼容旧版宿主）。
+async function confirmDialog(message) {
+  const hostConfirm =
+    typeof window !== "undefined" && window.__jarvisConfirm;
+  if (typeof hostConfirm === "function") {
+    return !!(await hostConfirm(message));
+  }
+  return !!window.confirm(message);
+}
+
 export default {
   name: "ReversaSidebarView",
   props: {
@@ -926,27 +937,27 @@ export default {
       }
     },
     // 标记 NLSpec 为已完成
-    markNlspecCompleted(name) {
+    async markNlspecCompleted(name) {
       if (!name) return;
-      if (!window.confirm(`标记 NLSpec「${name}」为已完成？`)) return;
+      if (!(await confirmDialog(`标记 NLSpec「${name}」为已完成？`))) return;
       this.setNlspecStatus(name, "completed");
     },
     // 标记 NLSpec 为已废弃（不再参与流水线）
-    markNlspecDeprecated(name) {
+    async markNlspecDeprecated(name) {
       if (!name) return;
-      if (!window.confirm(`废弃 NLSpec「${name}」？已废弃的 spec 不再参与流水线。`)) return;
+      if (!(await confirmDialog(`废弃 NLSpec「${name}」？已废弃的 spec 不再参与流水线。`))) return;
       this.setNlspecStatus(name, "deprecated");
     },
     // 重新激活 NLSpec（恢复为进行中）
-    reactivateNlspec(name) {
+    async reactivateNlspec(name) {
       if (!name) return;
-      if (!window.confirm(`重新激活 NLSpec「${name}」？`)) return;
+      if (!(await confirmDialog(`重新激活 NLSpec「${name}」？`))) return;
       this.setNlspecStatus(name, "active");
     },
     // 删除 NLSpec 文件（不可恢复）
     async deleteNlspec(name) {
       if (!this.projectDir || !name) return;
-      if (!window.confirm(`删除 NLSpec「${name}」？此操作不可恢复。`)) return;
+      if (!(await confirmDialog(`删除 NLSpec「${name}」？此操作不可恢复。`))) return;
       this.error = "";
       this.message = "";
       try {
@@ -1155,7 +1166,7 @@ export default {
         this.error = "请先选择项目目录";
         return;
       }
-      if (!window.confirm("确定卸载 Reversa 工作区？_reversa_sdd/ 产物会保留。")) {
+      if (!(await confirmDialog("确定卸载 Reversa 工作区？_reversa_sdd/ 产物会保留。"))) {
         return;
       }
       this.busy = true;
