@@ -310,6 +310,23 @@ export default {
       if (this.syncBusy) return "处理中…";
       return "";
     },
+    // 是否可回流：已安装 + git 仓库 + 已有基线
+    canSyncBackfill() {
+      return (
+        this.installed &&
+        this.isGitRepo &&
+        !!(this.syncStatus && this.syncStatus.has_baseline) &&
+        !this.syncBusy
+      );
+    },
+    // 回流被禁用的原因
+    syncBackfillBlockReason() {
+      if (!this.installed) return "请先安装 Reversa 工作区";
+      if (!this.isGitRepo) return "项目不是 git 仓库，无法回流文档";
+      if (!(this.syncStatus && this.syncStatus.has_baseline)) return "请先「记录基线」";
+      if (this.syncBusy) return "处理中…";
+      return "";
+    },
     // 当前阶段索引（-1 表示未开始/未知）
     currentPhaseIndex() {
       if (!this.status || !Array.isArray(this.status.completed)) return -1;
