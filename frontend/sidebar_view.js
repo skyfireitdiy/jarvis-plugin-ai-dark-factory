@@ -23,6 +23,13 @@ const DIRS_HISTORY_MAX = 10;
 const REFS_KEY_PREFIX = "jarvis_reversa_refs_";
 // 轮询间隔（毫秒）：3-5s 轮询 state.json（决策 9）。
 const POLL_INTERVAL = 4000;
+// 低频轻量兜底刷新默认间隔（毫秒）：60s（sidebar-auto-refresh）。
+const LIGHT_POLL_INTERVAL = 60000;
+// 低频轻量刷新间隔可覆盖的 localStorage key（毫秒字符串）。
+const LIGHT_POLL_INTERVAL_KEY = "jarvis_df_light_poll_interval";
+// 低频轻量刷新间隔有效范围（毫秒）：30s~300s，越界/非法一律回退默认。
+const LIGHT_POLL_MIN = 30000;
+const LIGHT_POLL_MAX = 300000;
 // Reversa 5 阶段（state.json 的 pending/completed 字段值）
 const PHASES = [
   "reconhecimento",
@@ -424,11 +431,22 @@ export default {
     this._pollTimer = setInterval(() => {
       this.pollStatus();
     }, POLL_INTERVAL);
+    // 可见性刷新（sidebar-auto-refresh）：标签页从后台切回前台时触发一次全量 refresh()
+    document.addEventListener("visibilitychange", this._onVisibilityChange);
+    // 低频轻量兜底（sidebar-auto-refresh）：前台可见时按固定间隔轻量刷新（仅 NLSpec/产物/同步状态），
+    // 每次触发后重建定时器并重新读取间隔（localStorage 可覆盖，改动即时生效）
+    this._startLightPoll();
     this.refresh();
   },
   beforeUnmount() {
     if (typeof this._offAgentChanged === "function") this._offAgentChanged();
     if (this._pollTimer) clearInterval(this._pollTimer);
+    // 标记已卸载：防止 lightPoll 异步执行中组件被卸载后，finally 重建定时器导致泄漏（sidebar-auto-refresh）
+    this._unmounted = true;
+    // 移除可见性监听与轻量定时器，避免监听器/定时器泄漏（sidebar-auto-refresh）
+    document.removeEventListener("visibilitychange", this._onVisibilityChange);
+    if (this._lightTimer) clearInterval(this._lightTimer);
+    this._lightTimer = null;
   },
   watch: {
     workingDir() {
@@ -1128,9 +1146,11 @@ export default {
       this.closeContextMenu();
     },
     // ---- 状态 ----
-    async refresh() {
+    // silent=true 时失败静默（不写 this.error、不弹错误），供自动刷新（可见性全量刷新）使用；
+    // 手动刷新（顶部按钮/右键菜单/workingDir watch）仍走默认非静默路径。
+    async refresh(silent) {
       this.loading = true;
-      this.error = "";
+      if (!silent) this.error = "";
       try {
         if (this.projectDir) {
           await this.loadProjectCheck();
@@ -1149,6 +1169,7 @@ export default {
         // scanNlspecs() 内部已有 !projectDir / nlspecLoading 防重入保护，空项目不误扫。
         await this.scanNlspecs();
       } catch (e) {
+        if (silent) return;
         this.error = e.message || "刷新失败";
         this.status = null;
       } finally {
@@ -1171,6 +1192,52 @@ export default {
       } catch (e) {
         // 轮询失败静默（断线重连：下次轮询自动恢复）
       }
+    },
+    // 低频轻量刷新间隔（sidebar-auto-refresh）：读 localStorage[LIGHT_POLL_INTERVAL_KEY]，
+    // 解析为整数；落在 [LIGHT_POLL_MIN, LIGHT_POLL_MAX]（30s~300s）内返回该值，否则回退默认 60000。
+    lightPollInterval() {
+      let v = NaN;
+      try {
+        v = parseInt(localStorage.getItem(LIGHT_POLL_INTERVAL_KEY), 10);
+      } catch (e) {
+        v = NaN;
+      }
+      if (Number.isFinite(v) && v >= LIGHT_POLL_MIN && v <= LIGHT_POLL_MAX) {
+        return v;
+      }
+      return LIGHT_POLL_INTERVAL;
+    },
+    // 启动低频轻量兜底定时器（sidebar-auto-refresh）：每次触发后重建定时器并重新读取间隔，
+    // 使 localStorage 覆盖的间隔改动即时生效（无需刷新页面）。组件已卸载（_unmounted）时不再启动。
+    _startLightPoll() {
+      if (this._unmounted) return;
+      if (this._lightTimer) clearInterval(this._lightTimer);
+      this._lightTimer = setInterval(() => this.lightPoll(), this.lightPollInterval());
+    },
+    // 低频轻量兜底刷新（sidebar-auto-refresh）：仅前台可见时执行，只更新 NLSpec 列表/产物列表/同步状态，
+    // 不重复拉取分析进度（不调用 loadStatus/loadProjectCheck/loadDepsGraph/ensureBaseline）。
+    // 前置条件：projectDir 存在、非 busy/loading、document 可见；任一不满足直接 return。
+    // 失败静默（不写 this.error，与 pollStatus 一致）。每次执行后重建定时器（间隔热更新）。
+    async lightPoll() {
+      if (!this.projectDir || this.busy || this.loading) return;
+      if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+      try {
+        await this.scanNlspecs();
+        await this.loadArtifacts();
+        await this.loadSyncStatus();
+      } catch (e) {
+        // 静默失败：不弹错误、不打断用户、不写 this.error
+      } finally {
+        // 重建定时器并重新读取间隔（localStorage 改动即时生效）
+        this._startLightPoll();
+      }
+    },
+    // 可见性刷新（sidebar-auto-refresh）：标签页从后台切回前台（visible）且空闲时触发一次全量 refresh()。
+    // 失败静默（refresh(true)）：不写 this.error、不打断用户，与 pollStatus 静默策略一致。
+    _onVisibilityChange() {
+      if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+      if (!this.projectDir || this.busy || this.loading) return;
+      this.refresh(true);
     },
     async loadStatus() {
       const payload = await callFunction("get_status", { project_dir: this.projectDir }, this.nodeId);
