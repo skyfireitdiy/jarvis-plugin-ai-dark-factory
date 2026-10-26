@@ -1141,6 +1141,9 @@ export default {
           this.projectCheck = null;
         }
         await this.loadDepsGraph();
+        // 刷新时自动重扫 NLSpec 列表（方案 A：await，保证刷新完成时列表已更新）。
+        // scanNlspecs() 内部已有 !projectDir / nlspecLoading 防重入保护，空项目不误扫。
+        await this.scanNlspecs();
       } catch (e) {
         this.error = e.message || "刷新失败";
         this.status = null;

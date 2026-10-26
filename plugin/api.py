@@ -577,7 +577,10 @@ def _nlspec_name_valid(name: str) -> bool:
 def list_nlspecs(project_dir: Optional[str] = None) -> Dict[str, Any]:
     """列出项目固定 NLSpec 目录（.jarvis/.df/specs/）下的 spec 文件。
 
-    返回 {"success": True, "data": {specs: [{name, title, updated_at, size}]}}。
+    返回 {"success": True, "data": {specs: [{name, title, status, history,
+    updated_at, created_at, size}]}}。
+    created_at 取文件 st_ctime（创建时间近似，Linux 上为 inode 变更时间）。
+    specs 按 created_at 倒序（最新创建在前），同 created_at 时按 name 升序。
     目录不存在时返回空列表（不报错，便于首次使用）。
     """
     project_dir, err = _resolve_project(project_dir)
@@ -609,9 +612,12 @@ def list_nlspecs(project_dir: Optional[str] = None) -> Dict[str, Any]:
                     "status": _nlspec_status(content),
                     "history": _nlspec_history(content),
                     "updated_at": stat.st_mtime,
+                    "created_at": stat.st_ctime,
                     "size": stat.st_size,
                 }
             )
+        # 排序契约：created_at 倒序（最新创建在前），同时间戳按 name 升序（稳定次序）
+        specs.sort(key=lambda s: (-s["created_at"], s["name"]))
     return {"success": True, "data": {"specs": specs}}
 
 
