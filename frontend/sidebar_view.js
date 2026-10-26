@@ -851,7 +851,8 @@ export default {
             `现有 NLSpec 文件：.jarvis/.df/specs/${name}（用 read_code 读取，以其为输入补齐缺口并更新）。`,
             "",
             `最终把完整 NLSpec 落盘到固定 spec 目录 .jarvis/.df/specs/${name}（澄清问答可一并留痕）。`,
-            "四要素完整后，引导进入 <dark-factory/run> 开始开发。",
+            "落盘后提示用户：NLSpec 已就绪，可在界面上点击「完整流水线」或「简化」按钮",
+            "用黑灯工厂执行；四要素未齐前不要进入流水线。",
           ]
         : [
             `请对项目 ${this.projectDir} 执行 NLSpec 澄清（<dark-factory/clarify> 流程），新建一份 NLSpec。`,
@@ -875,7 +876,8 @@ export default {
             "【第三步：落盘】",
             "四要素完整、无模糊项后，先与用户确认功能名，再把完整 NLSpec 落盘到固定 spec 目录",
             ".jarvis/.df/specs/<功能名>.md（每功能一个 spec，澄清问答可一并留痕）。",
-            "用户确认后再引导进入 <dark-factory/run> 开始开发；四要素未齐前不要进入流水线。",
+            "落盘后提示用户：NLSpec 已就绪，可在界面上点击「完整流水线」或「简化」按钮",
+            "用黑灯工厂执行；四要素未齐前不要进入流水线。",
           ];
       const prefill = {
         workingDir: this.projectDir,
@@ -1052,6 +1054,8 @@ export default {
             "4. 固定 spec 目录 .jarvis/.df/specs/<功能名>.md。",
             "5. 开发完成后知识回流：sync_diff → sync_baseline → export_rules。",
             "6. 门禁人工审批，不自动放行/合并。",
+            "7. 开发完成（含知识回流）后，调用 set_nlspec_status 工具把对应 NLSpec",
+            "   .jarvis/.df/specs/<功能名>.md 标记为 completed（by=agent）。",
           ].join("\n")
         : [
             `请基于 NLSpec 对项目 ${this.projectDir} 执行黑灯工厂流水线（<dark-factory/run>）。`,
