@@ -1520,6 +1520,16 @@ export default {
         this.error = "项目不是 git 仓库，无法记录 commit 基线";
         return;
       }
+      // 二次确认：记录基线会把当前 commit 与产物 hash 固化为比对基准，不可回退，需用户明确确认。
+      // 复用 confirmDialog()（宿主 __jarvisConfirm 优先、回退原生 window.confirm）；取消则直接 return，
+      // 不进入 syncBusy 置位、不调用后端。
+      if (
+        !(await confirmDialog(
+          "记录基线会把当前 commit 与规格产物 hash 固化为基准，后续代码变更将以此比对。此操作不可回退，确认记录？",
+        ))
+      ) {
+        return;
+      }
       this.syncBusy = true;
       this.error = "";
       this.message = "";
