@@ -9,6 +9,7 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "plugin"))
@@ -510,23 +511,68 @@ def test_list_nlspecs_empty(tmp_path):
 
 
 def test_list_nlspecs_lists_specs(tmp_path):
-    """list_nlspecs 列出固定目录下 .md spec，含标题与更新时间。"""
+    """list_nlspecs 列出固定目录下 .md spec，含标题、更新时间与创建时间。"""
     proj = _make_nlspec_project(tmp_path)
     r = api.list_nlspecs(proj)
     assert r["success"] is True
     specs = r["data"]["specs"]
     names = [s["name"] for s in specs]
-    assert names == ["auth.md", "report.md"]  # 排序
+    # 排序契约：按创建时间（st_ctime）倒序，同时间戳按 name 升序
+    expected = sorted(
+        ["auth.md", "report.md"],
+        key=lambda n: (
+            -os.stat(os.path.join(proj, ".jarvis", ".df", "specs", n)).st_ctime,
+            n,
+        ),
+    )
+    assert names == expected
     auth = next(s for s in specs if s["name"] == "auth.md")
     assert auth["title"] == "登录功能"
     assert auth["size"] > 0
     assert auth["updated_at"] > 0
+    assert auth["created_at"] > 0
     # 非 .md 文件被忽略
     notes = os.path.join(proj, ".jarvis", ".df", "specs", "notes.txt")
     with open(notes, "w", encoding="utf-8") as f:
         f.write("x")
     r2 = api.list_nlspecs(proj)
-    assert [s["name"] for s in r2["data"]["specs"]] == ["auth.md", "report.md"]
+    assert set(s["name"] for s in r2["data"]["specs"]) == {"auth.md", "report.md"}
+
+
+def test_list_nlspecs_created_at_is_ctime(tmp_path):
+    """list_nlspecs 每个 spec 的 created_at 取文件 st_ctime（创建时间近似）。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.list_nlspecs(proj)
+    specs = r["data"]["specs"]
+    assert len(specs) == 2
+    for s in specs:
+        assert "created_at" in s
+        full = os.path.join(proj, ".jarvis", ".df", "specs", s["name"])
+        assert s["created_at"] == os.stat(full).st_ctime
+
+
+def test_list_nlspecs_newest_first(tmp_path):
+    """list_nlspecs 按创建时间倒序：最新创建的 spec 排最前。"""
+    proj = tmp_path / "nlspecproj"
+    specs = proj / ".jarvis" / ".df" / "specs"
+    specs.mkdir(parents=True)
+    (specs / "old.md").write_text("# old\n\n## Goal\nx\n", encoding="utf-8")
+    time.sleep(0.05)  # 保证 old.md 的 ctime 严格早于 new.md
+    (specs / "new.md").write_text("# new\n\n## Goal\nx\n", encoding="utf-8")
+    r = api.list_nlspecs(str(proj))
+    names = [s["name"] for s in r["data"]["specs"]]
+    assert names == ["new.md", "old.md"]
+
+
+def test_list_nlspecs_sorted_contract(tmp_path):
+    """list_nlspecs 排序契约：created_at 倒序，同 created_at 时按 name 升序。"""
+    proj = _make_nlspec_project(tmp_path)
+    r = api.list_nlspecs(proj)
+    specs = r["data"]["specs"]
+    for i in range(len(specs) - 1):
+        assert specs[i]["created_at"] >= specs[i + 1]["created_at"]
+        if specs[i]["created_at"] == specs[i + 1]["created_at"]:
+            assert specs[i]["name"] < specs[i + 1]["name"]
 
 
 def test_get_nlspec_reads_content(tmp_path):
