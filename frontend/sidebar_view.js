@@ -826,7 +826,8 @@ export default {
         this.nlspecs = specs;
       } catch (e) {
         this.nlspecError = String((e && e.message) || e);
-        this.nlspecs = [];
+        // 静默刷新（sidebar-silent-refresh）：失败时保留旧列表，避免刷新期间列表整块消失。
+        // 仅首次加载（无旧数据）时列表保持为空，由模板「扫描中…/未发现 NLSpec」分支兜底。
       } finally {
         this.nlspecLoading = false;
       }
@@ -1098,6 +1099,10 @@ export default {
         name: `${baseName(this.projectDir)} - ${isQuick ? "黑灯工厂·简化" : "黑灯工厂"}（${name}）`,
         nodeId: this.nodeId,
       };
+      // 简化（quick）分支默认勾选「无交互模式」（sidebar-silent-refresh 需求②）：
+      // 仅 quick 分支预填 noInteractionMode，full 分支/澄清/逆向等其它创建入口保持默认（不勾选）。
+      // 宿主 __jarvisOpenCreateAgentModal 读取 prefill.noInteractionMode 预填弹窗复选框，用户仍可取消。
+      if (isQuick) prefill.noInteractionMode = true;
       try {
         if (typeof openModal === "function") {
           const res = await openModal(prefill);
@@ -1570,7 +1575,8 @@ export default {
         );
         this.syncStatus = payload.data || null;
       } catch (e) {
-        this.syncStatus = null;
+        // 静默刷新（sidebar-silent-refresh）：失败时保留旧 syncStatus，避免刷新期间状态整块消失。
+        // 仅首次加载（无旧数据）时保持 null，由模板「未记录基线」等分支兜底。
       }
     },
     // 记录知识回流基线（把当前 commit + 产物 hash 固化为基线）
@@ -1892,7 +1898,7 @@ export default {
     <div v-if="projectDir" style="border-bottom:1px solid #333;flex-shrink:0;">
       <div style="padding:0 10px;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
         <span style="font-size:11px;color:#aaa;">2.1 工作区状态</span>
-        <span v-if="loading" style="color:#888;">加载中…</span>
+        <span v-if="loading && !status" style="color:#888;">加载中…</span>
         <span v-else-if="installed" style="color:#3fb950;">已安装 v{{ status.version }}</span>
         <span v-else style="color:#d29922;">未安装</span>
         <span style="flex:1;"></span>
@@ -1956,9 +1962,8 @@ export default {
           </defs>
         </svg>
       </div>
-      <div v-else style="color:#666;font-size:11px;margin-bottom:4px;">
-        {{ depsLoading ? '加载依赖图…' : '暂无依赖（在上方 2.2 为当前项目添加上游依赖）' }}
-      </div>
+      <div v-else-if="depsLoading" style="color:#666;font-size:11px;margin-bottom:4px;">加载依赖图…</div>
+      <div v-else style="color:#666;font-size:11px;margin-bottom:4px;">暂无依赖（在上方 2.2 为当前项目添加上游依赖）</div>
     </div>
       <!-- 2.4 现存资料库（逆向输入：仅注入提示词，不落盘到项目） -->
       <div style="padding:0 10px 8px;">
@@ -2129,7 +2134,7 @@ export default {
           :style="{padding:'3px 8px',background: (nlspecBusy || !projectReady || !hasCreateChannel) ? '#2d2d2d' : '#1f6feb', color: (nlspecBusy || !projectReady || !hasCreateChannel) ? '#777' : '#fff', border:'none', borderRadius:'4px', cursor: (nlspecBusy || !projectReady || !hasCreateChannel) ? 'not-allowed' : 'pointer', fontSize:'11px'}">新建</button>
       </div>
       <div style="font-size:10px;color:#666;margin-bottom:4px;">NLSpec 存放于 .jarvis/.df/specs/</div>
-      <div v-if="nlspecLoading" style="color:#888;font-size:11px;">扫描中…</div>
+      <div v-if="nlspecLoading && !nlspecs.length" style="color:#888;font-size:11px;">扫描中…</div>
       <div v-else-if="!nlspecs.length" style="color:#666;font-size:11px;">未发现 NLSpec，点击「新建」创建</div>
       <div v-else style="display:flex;flex-direction:column;gap:4px;">
         <div v-for="s in nlspecs" :key="s.name"
